@@ -122,7 +122,6 @@ rlmModel rlmLoadFromModel(Model raylibModel, bool transferOwnership)
         MemFree(raylibModel.materials);
         MemFree(raylibModel.meshMaterial);
         MemFree(raylibModel.meshes);
-
     }
 
     return newModel;
