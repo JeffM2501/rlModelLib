@@ -8,6 +8,10 @@ typedef struct rlmGPUMesh	// data needed to draw a mesh
 {
     unsigned int vaoId;     // OpenGL Vertex Array Object id
     unsigned int* vboIds;    // OpenGL Vertex Buffer Objects id (default vertex data)
+
+    bool isIndexed;
+    unsigned int elementCount;
+
 }rlmGPUMesh; // 12 bytes
 
 typedef struct rlmMeshBuffers	// geometry buffers used to define a mesh
@@ -50,7 +54,7 @@ typedef struct rlmMaterialDef // a shader and it's input texture
     bool ownsShader; //1
 
     rlmMaterialChannel	baseChannel; //9
-    Color tint;		//4
+    Color tint;		//4              // TODO, push this into the channel?
 
     int materialChannels;			//4
     rlmMaterialChannel* extraChannels;// 8
@@ -97,8 +101,6 @@ rlmModel rlmCloneModel(rlmModel model);
 void rlmUnloadModel(rlmModel* model);
 
 void rlmApplyMaterialDef(rlmMaterialDef* material);
-void rlmDrawMesh(rlmGPUMesh* mesh, rlmPQSTransorm transform);
-void rlmDrawMeshMatrix(rlmGPUMesh* mesh);
 
 void rlmDrawModel(rlmModel model, rlmPQSTransorm transform);
 

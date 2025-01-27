@@ -25,9 +25,16 @@ Use this as a starting point or replace it with your code.
 #include "raylib.h"
 #include "raymath.h"
 
-#include "game.h"   // an external header in this project
-#include "lib.h"	// an external header in the static lib project
+#include "game.h" 
+#include "rlModels.h"	
+#include "rlModels_IO.h"
 
+
+Camera3D ViewCam = { 0 };
+
+Model raylibModel = { 0 };
+
+rlmModel newModel = { 0 };
 
 void GameInit()
 {
@@ -35,7 +42,15 @@ void GameInit()
     InitWindow(InitalWidth, InitalHeight, "Example");
     SetTargetFPS(144);
 
-    // load resources
+    ViewCam.fovy = 45;
+    ViewCam.position.z = -10;
+    ViewCam.position.y = 5;
+    ViewCam.up.y = 1;
+
+    raylibModel = LoadModelFromMesh(GenMeshCube(1,1,1));
+    raylibModel.materials[0].maps[0].color = RED;
+
+    newModel = rlmLoadFromModel(raylibModel, true);
 }
 
 void GameCleanup()
@@ -47,6 +62,9 @@ void GameCleanup()
 
 bool GameUpdate()
 {
+    if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
+        UpdateCamera(&ViewCam, CAMERA_THIRD_PERSON);
+
     return true;
 }
 
@@ -54,8 +72,15 @@ void GameDraw()
 {
     BeginDrawing();
     ClearBackground(DARKGRAY);
+    BeginMode3D(ViewCam);
 
-    DrawText("Hello Raylib!", 10, 10, 20, GetTextColor());
+  //  DrawModel(raylibModel, Vector3Zero(), 1, WHITE);
+
+    rlmDrawModel(newModel, rlmPQSIdentity());
+
+    DrawGrid(100, 1);
+
+    EndMode3D();
 
     EndDrawing();
 }

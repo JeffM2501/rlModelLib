@@ -55,5 +55,5 @@ project (baseName)
     includedirs { "include" }
     
     link_raylib()
-    link_to("staticLib")
+    link_to("rlModels")
 -- To link to a lib use link_to("LIB_FOLDER_NAME")

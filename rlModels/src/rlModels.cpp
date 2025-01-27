@@ -336,14 +336,85 @@ void rlmSetMaterialChannelTexture(rlmMaterialChannel* channel, Texture2D texture
     channel->textureId = texture.id;
 }
 
+void rlmCloneMaterial(const rlmMaterialDef* oldMaterial, rlmMaterialDef* newMaterial)
+{
+    if (!oldMaterial || !newMaterial)
+        return;
+
+    newMaterial->baseChannel = oldMaterial->baseChannel;
+    newMaterial->baseChannel.ownsTexture = false;
+
+    newMaterial->shader = oldMaterial->shader;
+    newMaterial->ownsShader = false;
+
+    newMaterial->tint = oldMaterial->tint;
+
+    newMaterial->materialChannels = oldMaterial->materialChannels;
+
+    if (newMaterial->materialChannels > 0 && oldMaterial->extraChannels)
+    {
+        newMaterial->extraChannels = (rlmMaterialChannel*)MemAlloc(sizeof(rlmMaterialChannel) * newMaterial->materialChannels);
+
+        for (int i = 0; i < newMaterial->materialChannels; i++)
+        {
+            newMaterial->extraChannels[i] = oldMaterial->extraChannels[i];
+            newMaterial->extraChannels[i].ownsTexture = false;
+        }
+    }
+}
+
 rlmModel rlmCloneModel(rlmModel model)
 {
+    rlmModel newModel;
+    newModel.groupCount = model.groupCount;
 
+    newModel.groups = (rlmModelGroup*)MemAlloc(sizeof(rlmModelGroup) * newModel.groupCount);
+    for (int group = 0; group < newModel.groupCount; group++)
+    {
+        rlmModelGroup* newGroup = newModel.groups + group;
+        const rlmModelGroup* oldGroup = model.groups + group;
+
+        rlmCloneMaterial(&oldGroup->material, &newGroup->material);
+
+        newGroup->ownsMeshes = false;
+        newGroup->meshCount = oldGroup->meshCount;
+
+        newGroup->meshes = (rlmMesh*)MemAlloc(sizeof(rlmMesh) * newGroup->meshCount);
+
+        for (int m = 0; m < newGroup->meshCount; m++)
+        {
+            newGroup->meshes[m] = oldGroup->meshes[m];
+        }
+    }
+
+    return newModel;
 }
 
 void rlmUnloadModel(rlmModel* model)
 {
+    if (!model)
+        return;
 
+    for (int group = 0; group < model->groupCount; group++)
+    {
+        rlmModelGroup* groupPtr = model->groups + group;
+
+        rlmUnloadMaterial(&groupPtr->material);
+
+        if (groupPtr->ownsMeshes)
+        {
+            for (int i = 0; i < groupPtr->meshCount; i++)
+                rlmUnloadMesh(groupPtr->meshes + i);
+        }
+
+        MemFree(groupPtr->meshes);
+        groupPtr->meshCount = 0;
+        groupPtr->meshes = 0;
+    }
+
+    model->groupCount = 0;
+    MemFree(model->groups);
+    model->groups = NULL;
 }
 
 void rlmApplyMaterialDef(rlmMaterialDef* material)
@@ -372,19 +443,175 @@ void rlmApplyMaterialDef(rlmMaterialDef* material)
     }
 }
 
-void rlmDrawMesh(rlmGPUMesh* mesh, rlmPQSTransorm transform)
+Matrix rlmPQSToMatrix(const rlmPQSTransorm* transform)
 {
+    Matrix matScale = MatrixScale(transform->scale.x, transform->scale.y, transform->scale.z);
 
+    Vector3 axis = { 0 };
+    float angle = 0;
+
+    QuaternionToAxisAngle(transform->rotation, &axis, &angle);
+    Matrix matRotation = MatrixRotate(axis, angle);
+    Matrix matTranslation = MatrixTranslate(transform->translation.x, transform->translation.y, transform->translation.z);
+
+    return MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
 }
 
-void rlmDrawMeshMatrix(rlmGPUMesh* mesh)
+void rlmDrawMesh(rlmGPUMesh* mesh, Shader* shader)
 {
+    if (!mesh || !shader)
+        return;
 
+    // Try binding vertex array objects (VAO) or use VBOs if not possible
+    // WARNING: UploadMesh() enables all vertex attributes available in mesh and sets default attribute values
+    // for shader expected vertex attributes that are not provided by the mesh (i.e. colors)
+    // This could be a dangerous approach because different meshes with different shaders can enable/disable some attributes
+    if (!rlEnableVertexArray(mesh->vaoId))
+    {
+        // Bind mesh VBO data: vertex position (shader-location = 0)
+        rlEnableVertexBuffer(mesh->vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_POSITION]);
+
+        // Bind mesh VBO data: vertex texcoords (shader-location = 1)
+        rlEnableVertexBuffer(mesh->vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_TEXCOORD]);
+        rlSetVertexAttribute(shader->locs[SHADER_LOC_VERTEX_TEXCOORD01], 2, RL_FLOAT, 0, 0, 0);
+        rlEnableVertexAttribute(shader->locs[SHADER_LOC_VERTEX_TEXCOORD01]);
+
+        if (shader->locs[SHADER_LOC_VERTEX_NORMAL] != -1)
+        {
+            // Bind mesh VBO data: vertex normals (shader-location = 2)
+            rlEnableVertexBuffer(mesh->vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_NORMAL]);
+            rlSetVertexAttribute(shader->locs[SHADER_LOC_VERTEX_NORMAL], 3, RL_FLOAT, 0, 0, 0);
+            rlEnableVertexAttribute(shader->locs[SHADER_LOC_VERTEX_NORMAL]);
+        }
+
+        // Bind mesh VBO data: vertex colors (shader-location = 3, if available)
+        if (shader->locs[SHADER_LOC_VERTEX_COLOR] != -1)
+        {
+            if (mesh->vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_COLOR] != 0)
+            {
+                rlEnableVertexBuffer(mesh->vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_COLOR]);
+                rlSetVertexAttribute(shader->locs[SHADER_LOC_VERTEX_COLOR], 4, RL_UNSIGNED_BYTE, 1, 0, 0);
+                rlEnableVertexAttribute(shader->locs[SHADER_LOC_VERTEX_COLOR]);
+            }
+            else
+            {
+                // Set default value for defined vertex attribute in shader but not provided by mesh
+                // WARNING: It could result in GPU undefined behavior
+                static float value[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+                rlSetVertexAttributeDefault(shader->locs[SHADER_LOC_VERTEX_COLOR], value, SHADER_ATTRIB_VEC4, 4);
+                rlDisableVertexAttribute(shader->locs[SHADER_LOC_VERTEX_COLOR]);
+            }
+        }
+
+        // Bind mesh VBO data: vertex tangents (shader-location = 4, if available)
+        if (shader->locs[SHADER_LOC_VERTEX_TANGENT] != -1)
+        {
+            rlEnableVertexBuffer(mesh->vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_TANGENT]);
+            rlSetVertexAttribute(shader->locs[SHADER_LOC_VERTEX_TANGENT], 4, RL_FLOAT, 0, 0, 0);
+            rlEnableVertexAttribute(shader->locs[SHADER_LOC_VERTEX_TANGENT]);
+        }
+
+        // Bind mesh VBO data: vertex texcoords2 (shader-location = 5, if available)
+        if (shader->locs[SHADER_LOC_VERTEX_TEXCOORD02] != -1)
+        {
+            rlEnableVertexBuffer(mesh->vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_TEXCOORD2]);
+            rlSetVertexAttribute(shader->locs[SHADER_LOC_VERTEX_TEXCOORD02], 2, RL_FLOAT, 0, 0, 0);
+            rlEnableVertexAttribute(shader->locs[SHADER_LOC_VERTEX_TEXCOORD02]);
+        }
+
+#ifdef RL_SUPPORT_MESH_GPU_SKINNING
+        // Bind mesh VBO data: vertex bone ids (shader-location = 6, if available)
+        if (shader->locs[SHADER_LOC_VERTEX_BONEIDS] != -1)
+        {
+            rlEnableVertexBuffer(mesh->vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEIDS]);
+            rlSetVertexAttribute(shader->locs[SHADER_LOC_VERTEX_BONEIDS], 4, RL_UNSIGNED_BYTE, 0, 0, 0);
+            rlEnableVertexAttribute(shader->locs[SHADER_LOC_VERTEX_BONEIDS]);
+        }
+
+        // Bind mesh VBO data: vertex bone weights (shader-location = 7, if available)
+        if (shader->locs[SHADER_LOC_VERTEX_BONEWEIGHTS] != -1)
+        {
+            rlEnableVertexBuffer(mesh->vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEWEIGHTS]);
+            rlSetVertexAttribute(shader->locs[SHADER_LOC_VERTEX_BONEWEIGHTS], 4, RL_FLOAT, 0, 0, 0);
+            rlEnableVertexAttribute(shader->locs[SHADER_LOC_VERTEX_BONEWEIGHTS]);
+        }
+#endif
+
+        if (mesh->isIndexed)
+            rlEnableVertexBufferElement(mesh->vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_INDICES]);
+    }
+
+        // Draw mesh
+    if (mesh->isIndexed)
+        rlDrawVertexArrayElements(0, mesh->elementCount, 0);
+    else
+        rlDrawVertexArray(0, mesh->elementCount);
+
+
+    // Disable all possible vertex array objects (or VBOs)
+    rlDisableVertexArray();
+    rlDisableVertexBuffer();
+    rlDisableVertexBufferElement();
 }
 
 void rlmDrawModel(rlmModel model, rlmPQSTransorm transform)
 {
+    Matrix transformMatrix = rlmPQSToMatrix(&transform);
+    Matrix modelMatrix = MatrixMultiply(rlmPQSToMatrix(&model.orientationTransform), transformMatrix);
 
+    // add in the rlgl matrix stack
+    Matrix matModel = MatrixMultiply(modelMatrix, rlGetMatrixTransform());
+
+    for (int group = 0; group < model.groupCount; group++)
+    {
+        rlmModelGroup* groupPtr = model.groups + group;
+
+        rlmApplyMaterialDef(&groupPtr->material);
+
+        float values[4] = {
+           (float)groupPtr->material.tint.r / 255.0f,
+           (float)groupPtr->material.tint.g / 255.0f,
+           (float)groupPtr->material.tint.b / 255.0f,
+           (float)groupPtr->material.tint.a / 255.0f
+        };
+        rlSetUniform(groupPtr->material.shader.locs[SHADER_LOC_COLOR_DIFFUSE], values, SHADER_UNIFORM_VEC4, 1);
+
+        // load uniforms
+        // Get a copy of current matrices to work with,
+        // just in case stereo render is required, and we need to modify them
+        // NOTE: At this point the modelview matrix just contains the view matrix (camera)
+        // That's because BeginMode3D() sets it and there is no model-drawing function
+        // that modifies it, all use rlPushMatrix() and rlPopMatrix()
+        Matrix matView = rlGetMatrixModelview();
+        Matrix matProjection = rlGetMatrixProjection();
+        Matrix matModelView = MatrixMultiply(matModel, matView);
+        Matrix matModelViewProjection = MatrixMultiply(matModelView, matProjection);
+
+        // Upload view and projection matrices (if locations available)
+        if (groupPtr->material.shader.locs[SHADER_LOC_MATRIX_VIEW] != -1)
+            rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_VIEW], matView);
+
+        if (groupPtr->material.shader.locs[SHADER_LOC_MATRIX_PROJECTION] != -1)
+            rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_PROJECTION], matProjection);
+
+        // Model transformation matrix is sent to shader uniform location: SHADER_LOC_MATRIX_MODEL
+        if (groupPtr->material.shader.locs[SHADER_LOC_MATRIX_MODEL] != -1)
+            rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_MODEL], matModel);
+
+        // Upload model normal matrix (if locations available)
+        if (groupPtr->material.shader.locs[SHADER_LOC_MATRIX_NORMAL] != -1) 
+            rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_NORMAL], MatrixTranspose(MatrixInvert(matModel)));
+
+        // Send combined model-view-projection matrix to shader
+        rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_MVP], matModelViewProjection);
+        
+        // draw the meshes
+        for (int i = 0; i < groupPtr->meshCount; i++)
+            rlmDrawMesh(&groupPtr->meshes[i].gpuMesh, &groupPtr->material.shader);
+
+        // Disable shader program
+        rlDisableShader();
+    }
 }
 
 rlmPQSTransorm rlmPQSIdentity()
