@@ -1,6 +1,8 @@
 #include "rlModels_IO.h"
 
-rlmModel rlmLoadFromModel(Model raylibModel, bool transferOwnership)
+#include <stdio.h>
+
+rlmModel rlmLoadFromModel(Model raylibModel)
 {
     rlmModel newModel = { 0 };
 
@@ -13,15 +15,20 @@ rlmModel rlmLoadFromModel(Model raylibModel, bool transferOwnership)
     {
         rlmModelGroup* newGroup = newModel.groups + groupIndex;
 
-        newGroup->ownsMeshes = transferOwnership;
+        newGroup->ownsMeshes = true;
+        newGroup->ownsMeshList = true;
+
+        newGroup->material.name = (char*)MemAlloc(32);
+        newGroup->material.name[0] = '\0';
+        sprintf(newGroup->material.name, "imported_mat_%d", groupIndex);
 
         newGroup->material.shader = raylibModel.materials[groupIndex].shader;
-        newGroup->material.ownsShader = transferOwnership;
+        newGroup->material.ownsShader = true;
 
         newGroup->material.baseChannel.cubeMap = false;
         newGroup->material.baseChannel.textureId = raylibModel.materials[groupIndex].maps[MATERIAL_MAP_DIFFUSE].texture.id;
         newGroup->material.baseChannel.textureSlot = 0;
-        newGroup->material.baseChannel.ownsTexture = transferOwnership;
+        newGroup->material.baseChannel.ownsTexture = true;
         newGroup->material.baseChannel.shaderLoc = -1;
 
         newGroup->material.tint = raylibModel.materials[groupIndex].maps[MATERIAL_MAP_DIFFUSE].color;
@@ -38,11 +45,10 @@ rlmModel rlmLoadFromModel(Model raylibModel, bool transferOwnership)
         int extraIndex = 0;
         if (raylibModel.materials[groupIndex].maps[MATERIAL_MAP_METALNESS].texture.id > 0)
         {
-
             newGroup->material.extraChannels[extraIndex].cubeMap = false;
             newGroup->material.extraChannels[extraIndex].textureId = raylibModel.materials[groupIndex].maps[MATERIAL_MAP_METALNESS].texture.id;
             newGroup->material.extraChannels[extraIndex].textureSlot = 1;
-            newGroup->material.extraChannels[extraIndex].ownsTexture = transferOwnership;
+            newGroup->material.extraChannels[extraIndex].ownsTexture = true;
             newGroup->material.extraChannels[extraIndex].shaderLoc = newGroup->material.shader.locs[SHADER_LOC_MAP_METALNESS];
             extraIndex++;
         }
@@ -52,7 +58,7 @@ rlmModel rlmLoadFromModel(Model raylibModel, bool transferOwnership)
             newGroup->material.extraChannels[extraIndex].cubeMap = false;
             newGroup->material.extraChannels[extraIndex].textureId = raylibModel.materials[groupIndex].maps[MATERIAL_MAP_NORMAL].texture.id;
             newGroup->material.extraChannels[extraIndex].textureSlot = 2;
-            newGroup->material.extraChannels[extraIndex].ownsTexture = transferOwnership;
+            newGroup->material.extraChannels[extraIndex].ownsTexture = true;
             newGroup->material.extraChannels[extraIndex].shaderLoc = newGroup->material.shader.locs[SHADER_LOC_MAP_NORMAL];
             extraIndex++;
         }
@@ -77,52 +83,45 @@ rlmModel rlmLoadFromModel(Model raylibModel, bool transferOwnership)
 
             rlmMesh* newMesh = newGroup->meshes + meshIndex;
 
-            if (transferOwnership)
+            newMesh->name = (char*)MemAlloc(32);
+            newMesh->name[0] = '\0';
+            sprintf(newMesh->name, "imported_mesh_%d", m);
+
+            newMesh->gpuMesh.vaoId = oldMesh->vaoId;
+            newMesh->gpuMesh.vboIds = oldMesh->vboId;
+
+            if (oldMesh->indices)
             {
-                newMesh->gpuMesh.vaoId = oldMesh->vaoId;
-                newMesh->gpuMesh.vboIds = oldMesh->vboId;
-
-                if (oldMesh->indices)
-                {
-                    newMesh->gpuMesh.isIndexed = true;
-                    newMesh->gpuMesh.elementCount = oldMesh->triangleCount * 3;
-                }
-                else
-                {
-                    newMesh->gpuMesh.isIndexed = false;
-                    newMesh->gpuMesh.elementCount = oldMesh->vertexCount;
-                }
-
-                MemFree(oldMesh->vertices);
-                MemFree(oldMesh->texcoords);
-                MemFree(oldMesh->texcoords2);
-                MemFree(oldMesh->normals);
-                MemFree(oldMesh->tangents);
-                MemFree(oldMesh->colors);
-                MemFree(oldMesh->indices);
-                MemFree(oldMesh->animVertices);
-                MemFree(oldMesh->animNormals);
-                MemFree(oldMesh->boneIds);
-                MemFree(oldMesh->boneWeights);
-                MemFree(oldMesh->boneMatrices);
+                newMesh->gpuMesh.isIndexed = true;
+                newMesh->gpuMesh.elementCount = oldMesh->triangleCount * 3;
             }
-            else // copy the buffers and reupload?
+            else
             {
-
+                newMesh->gpuMesh.isIndexed = false;
+                newMesh->gpuMesh.elementCount = oldMesh->vertexCount;
             }
+
+            MemFree(oldMesh->vertices);
+            MemFree(oldMesh->texcoords);
+            MemFree(oldMesh->texcoords2);
+            MemFree(oldMesh->normals);
+            MemFree(oldMesh->tangents);
+            MemFree(oldMesh->colors);
+            MemFree(oldMesh->indices);
+            MemFree(oldMesh->animVertices);
+            MemFree(oldMesh->animNormals);
+            MemFree(oldMesh->boneIds);
+            MemFree(oldMesh->boneWeights);
 
             meshIndex++;
         }
     }
 
-    if (transferOwnership)
-    {
-        MemFree(raylibModel.bindPose);
-        MemFree(raylibModel.bones);
-        MemFree(raylibModel.materials);
-        MemFree(raylibModel.meshMaterial);
-        MemFree(raylibModel.meshes);
-    }
+    MemFree(raylibModel.bindPose);
+    MemFree(raylibModel.bones);
+    MemFree(raylibModel.materials);
+    MemFree(raylibModel.meshMaterial);
+    MemFree(raylibModel.meshes);
 
     return newModel;
 }

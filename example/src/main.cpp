@@ -32,9 +32,9 @@ Use this as a starting point or replace it with your code.
 
 Camera3D ViewCam = { 0 };
 
-Model raylibModel = { 0 };
-
 rlmModel newModel = { 0 };
+
+rlmModel cloneModel = { 0 };
 
 void GameInit()
 {
@@ -43,20 +43,27 @@ void GameInit()
     SetTargetFPS(144);
 
     ViewCam.fovy = 45;
-    ViewCam.position.z = -10;
-    ViewCam.position.y = 5;
+    ViewCam.position.z = -50;
+    ViewCam.position.y = 25;
     ViewCam.up.y = 1;
 
-    raylibModel = LoadModelFromMesh(GenMeshCube(1,1,1));
-    raylibModel.materials[0].maps[0].color = RED;
+    Model raylibModel = LoadModel("resources/castle.obj");
+    raylibModel.materials[0].maps[0].texture = LoadTexture("resources/castle_diffuse.png");
 
-    newModel = rlmLoadFromModel(raylibModel, true);
+    newModel = rlmLoadFromModel(raylibModel);
+    newModel.groups[0].material.baseChannel.ownsTexture = true;
+
+    cloneModel = rlmCloneModel(newModel);
+
+    cloneModel.orientationTransform.translation.x = 50;
+    rlmSetMaterialChannelTexture(&cloneModel.groups[0].material.baseChannel, LoadTexture("resources/castle_diffuse_blue.png"));
+    cloneModel.groups[0].material.baseChannel.ownsTexture = true;
 }
 
 void GameCleanup()
 {
-    // unload resources
-
+    rlmUnloadModel(&cloneModel);
+    rlmUnloadModel(&newModel);
     CloseWindow();
 }
 
@@ -74,9 +81,8 @@ void GameDraw()
     ClearBackground(DARKGRAY);
     BeginMode3D(ViewCam);
 
-  //  DrawModel(raylibModel, Vector3Zero(), 1, WHITE);
-
     rlmDrawModel(newModel, rlmPQSIdentity());
+    rlmDrawModel(cloneModel, rlmPQSIdentity());
 
     DrawGrid(100, 1);
 

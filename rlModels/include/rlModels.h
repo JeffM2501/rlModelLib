@@ -12,7 +12,7 @@ typedef struct rlmGPUMesh	// data needed to draw a mesh
     bool isIndexed;
     unsigned int elementCount;
 
-}rlmGPUMesh; // 12 bytes
+}rlmGPUMesh;
 
 typedef struct rlmMeshBuffers	// geometry buffers used to define a mesh
 {
@@ -31,60 +31,65 @@ typedef struct rlmMeshBuffers	// geometry buffers used to define a mesh
     // Animation vertex data
     unsigned char* boneIds; // Vertex bone ids, max 255 bone ids, up to 4 bones influence by vertex (skinning) (shader-location = 6)
     float* boneWeights;     // Vertex bone weight, up to 4 bones influence by vertex (skinning) (shader-location = 7)
-}rlmMeshBuffers;// 9*size_t bytes
+}rlmMeshBuffers;
 
 typedef struct rlmMesh // a mesh
 {
+    char* name;
     rlmGPUMesh gpuMesh;
     rlmMeshBuffers* meshBuffers; // optional after upload
-}rlmMesh; //20 bytes
+    // TODO rlmAnimatedMeshBuffers ?
+}rlmMesh;
 
 typedef struct rlmMaterialChannel // a texture map in a material
 {
-    int textureId;	//4
-    bool ownsTexture; //1
-    int shaderLoc;	//4
+    int textureId;
+    bool ownsTexture;
+    int shaderLoc;
     bool cubeMap;
     int textureSlot;
-}rlmMaterialChannel; // 9 bytes
+}rlmMaterialChannel;
 
 typedef struct rlmMaterialDef // a shader and it's input texture
 {
-    Shader shader;	// 12
-    bool ownsShader; //1
+    char* name; 
+    Shader shader;
+    bool ownsShader;
 
-    rlmMaterialChannel	baseChannel; //9
-    Color tint;		//4              // TODO, push this into the channel?
+    rlmMaterialChannel	baseChannel;
+    Color tint;		                // TODO, push this into the channel?
 
-    int materialChannels;			//4
-    rlmMaterialChannel* extraChannels;// 8
-}rlmMaterialDef; // 38 bytes
+    int materialChannels;
+    rlmMaterialChannel* extraChannels;
+}rlmMaterialDef; 
 
 typedef struct rlmModelGroup // a group of meshes that share a material
 {
     rlmMaterialDef material;
     bool ownsMeshes;
+    bool ownsMeshList;
     int meshCount;
     rlmMesh* meshes;
-}rlmModelGroup; //50 bytes
+}rlmModelGroup; 
 
 typedef struct rlmPQSTransorm // a transform
 {
     Vector3 translation;
     Quaternion rotation;
     Vector3 scale;
-}rlmPQSTransorm;// 40 bytes
+}rlmPQSTransorm;
 
 typedef struct rlmModel // a group of meshes, materials, and an orientation transform
 {
-    int groupCount;	// 4
-    rlmModelGroup* groups; // 8
-    rlmPQSTransorm orientationTransform; // 40 (store as pointer? )
-}rlmModel; // 53 bytes
+    int groupCount;
+    rlmModelGroup* groups;
+    rlmPQSTransorm orientationTransform;
+}rlmModel;
 
+// meshes
 void rlmUploadMesh(rlmMesh* mesh, bool releaseGeoBuffers);
-void rlmUnloadMesh(rlmMesh* mesh);
 
+// materials
 rlmMaterialDef rlmGetDefaultMaterial();
 
 void rlmUnloadMaterial(rlmMaterialDef* material);
@@ -96,6 +101,9 @@ void rlmSetMaterialDefShader(rlmMaterialDef* material, Shader shader);
 
 void rlmSetMaterialChannelTexture(rlmMaterialChannel* channel, Texture2D texture);
 
+// models
+void rlmSetModelShader(rlmModel* model, Shader shader);
+
 rlmModel rlmCloneModel(rlmModel model);
 
 void rlmUnloadModel(rlmModel* model);
@@ -105,3 +113,7 @@ void rlmApplyMaterialDef(rlmMaterialDef* material);
 void rlmDrawModel(rlmModel model, rlmPQSTransorm transform);
 
 rlmPQSTransorm rlmPQSIdentity();
+
+// state API
+void rlmSetDefaultMaterialShader(Shader shader);
+void rlmClearDefaultMaterialShader();

@@ -3,6 +3,23 @@
 #include "rlgl.h"
 #include "config.h"
 
+#include <string.h>
+
+static Shader DefaultMaterialShader = { 0 };
+static bool DefaultMaterialShaderSet = false;
+
+void rlmSetDefaultMaterialShader(Shader shader)
+{
+    DefaultMaterialShader = shader;
+    DefaultMaterialShaderSet = true;
+}
+
+void rlmClearDefaultMaterialShader()
+{
+    DefaultMaterialShader = Shader{ 0 };
+    DefaultMaterialShaderSet = false;
+}
+
 static void rlUnloadMeshBuffer(rlmMeshBuffers* buffers)
 {
     if (!buffers)
@@ -197,6 +214,9 @@ void rlmUnloadMesh(rlmMesh* mesh)
     if (!mesh)
         return;
 
+    MemFree(mesh->name);
+    mesh->name = NULL;
+
     rlUnloadVertexArray(mesh->gpuMesh.vaoId);
 
     if (mesh->gpuMesh.vboIds != NULL)
@@ -215,9 +235,22 @@ void rlmUnloadMesh(rlmMesh* mesh)
 rlmMaterialDef rlmGetDefaultMaterial()
 {
     rlmMaterialDef material = { 0 };
-    material.shader.id = rlGetShaderIdDefault();
-    material.shader.locs = rlGetShaderLocsDefault();
-    material.ownsShader = true;
+    material.name = (char*)MemAlloc(32);
+    material.name[0] = '\0';
+    strcpy(material.name, "rlmDefaultMaterial");
+
+    if (DefaultMaterialShaderSet)
+    {
+        material.shader.id = DefaultMaterialShader.id;
+        material.shader.locs = DefaultMaterialShader.locs;
+        material.ownsShader = false;
+    }
+    else
+    {
+        material.shader.id = rlGetShaderIdDefault();
+        material.shader.locs = rlGetShaderLocsDefault();
+        material.ownsShader = true;
+    }
 
     material.baseChannel.ownsTexture = false;
     material.baseChannel.textureId = rlGetTextureIdDefault();
@@ -234,13 +267,14 @@ void rlmUnloadMaterial(rlmMaterialDef* material)
     if (!material)
         return;
 
+    MemFree(material->name);
+    material->name = NULL;
+
     if (material->ownsShader)
     {
         if (material->shader.id != rlGetShaderIdDefault())
         {
             rlUnloadShaderProgram(material->shader.id);
-
-            // NOTE: If shader loading failed, it should be 0
             MemFree(material->shader.locs);
         }
         material->shader.locs = NULL;
@@ -341,6 +375,10 @@ void rlmCloneMaterial(const rlmMaterialDef* oldMaterial, rlmMaterialDef* newMate
     if (!oldMaterial || !newMaterial)
         return;
 
+    newMaterial->name = (char*)MemAlloc(32);
+    newMaterial->name[0] = '\0';
+
+    strcpy(newMaterial->name, oldMaterial->name);
     newMaterial->baseChannel = oldMaterial->baseChannel;
     newMaterial->baseChannel.ownsTexture = false;
 
@@ -366,6 +404,9 @@ void rlmCloneMaterial(const rlmMaterialDef* oldMaterial, rlmMaterialDef* newMate
 rlmModel rlmCloneModel(rlmModel model)
 {
     rlmModel newModel;
+
+    newModel.orientationTransform = model.orientationTransform;
+
     newModel.groupCount = model.groupCount;
 
     newModel.groups = (rlmModelGroup*)MemAlloc(sizeof(rlmModelGroup) * newModel.groupCount);
@@ -377,17 +418,24 @@ rlmModel rlmCloneModel(rlmModel model)
         rlmCloneMaterial(&oldGroup->material, &newGroup->material);
 
         newGroup->ownsMeshes = false;
+        newGroup->ownsMeshList = false;
+
         newGroup->meshCount = oldGroup->meshCount;
-
-        newGroup->meshes = (rlmMesh*)MemAlloc(sizeof(rlmMesh) * newGroup->meshCount);
-
-        for (int m = 0; m < newGroup->meshCount; m++)
-        {
-            newGroup->meshes[m] = oldGroup->meshes[m];
-        }
+        newGroup->meshes = oldGroup->meshes;
     }
 
     return newModel;
+}
+
+void rlmSetModelShader(rlmModel* model, Shader shader)
+{
+    for (int group = 0; group < model->groupCount; group++)
+    {
+        rlmModelGroup* groupPtr = model->groups + group;
+
+        groupPtr->material.shader = shader;
+        groupPtr->material.ownsShader = false;
+    }
 }
 
 void rlmUnloadModel(rlmModel* model)
@@ -407,7 +455,8 @@ void rlmUnloadModel(rlmModel* model)
                 rlmUnloadMesh(groupPtr->meshes + i);
         }
 
-        MemFree(groupPtr->meshes);
+        if (groupPtr->ownsMeshList)
+            MemFree(groupPtr->meshes);
         groupPtr->meshCount = 0;
         groupPtr->meshes = 0;
     }
