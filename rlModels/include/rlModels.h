@@ -72,20 +72,60 @@ typedef struct rlmModelGroup // a group of meshes that share a material
     bool ownsMeshList;
     int meshCount;
     rlmMesh* meshes;
+    bool* meshEnableFlags;
 }rlmModelGroup; 
 
-typedef struct rlmPQSTransorm // a transform
+typedef struct rlmPQSTransorm // a transform with a position, quaternion rotation, scale
 {
-    Vector3 translation;
+    Vector3 position;
     Quaternion rotation;
     Vector3 scale;
 }rlmPQSTransorm;
+
+typedef struct rlmBoneInfo  // a node in the bone tree
+{
+    char name[32];
+
+    int boneId;
+    int parentId;
+
+    int childCount;
+    rlmBoneInfo** childBones;
+};
+
+typedef struct rlmAnimationKeyframe // a list of local space bone transforms for a skeleton
+{
+    rlmPQSTransorm* boneTransforms;
+};
+
+typedef struct rlmSkeleton // a tree of bones, and the keyframe for it's binding pose
+{
+    int boneCount;
+    rlmBoneInfo* rootBone;
+
+    rlmAnimationKeyframe bindingFrame;
+}rlmSkeleton;
+
+typedef struct rlmModelAnimationPose    // a list of model space matricides baked out for display of an animation
+{
+    Matrix* boneMatricies;
+};
+
+typedef struct rlmModelAniamtionSequence
+{
+    char name[64];
+    float fps;
+
+    int keyframeCount;
+    rlmAnimationKeyframe*    keyframes;
+};
 
 typedef struct rlmModel // a group of meshes, materials, and an orientation transform
 {
     int groupCount;
     rlmModelGroup* groups;
     rlmPQSTransorm orientationTransform;
+    rlmSkeleton* skeleton;
 }rlmModel;
 
 // meshes
@@ -114,7 +154,26 @@ void rlmApplyMaterialDef(rlmMaterialDef* material);
 
 void rlmDrawModel(rlmModel model, rlmPQSTransorm transform);
 
+void rlmDrawModelWithPose(rlmModel model, rlmPQSTransorm transform, rlmModelAnimationPose* pose);
+
+// animations
+rlmModelAnimationPose rlmLoadPoseFromModel(rlmModel model);
+void rlmUnloadPose(rlmModelAnimationPose* pose);
+
+void rlmSetPoseToKeyframe(rlmModel model, rlmAnimationKeyframe frame);
+void rlmSetPoseToKeyframeEx(rlmModel model, rlmAnimationKeyframe frame, rlmBoneInfo * startBone);
+
+void rlmSetPoseToKeyframesLerp(rlmModel model, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param);
+void rlmSetPoseToKeyframesLerpEx(rlmModel model, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param, rlmBoneInfo* startBone);
+
+rlmBoneInfo* rlmFindBoneByName(rlmModel model, const char* boneName);
+
+
+// transform utility
 rlmPQSTransorm rlmPQSIdentity();
+rlmPQSTransorm rlmPQSTranslation(float x, float y, float z);
+
+// TODO, some math operators, add/subtract at a minimum
 
 // state API
 void rlmSetDefaultMaterialShader(Shader shader);

@@ -523,7 +523,7 @@ Matrix rlmPQSToMatrix(const rlmPQSTransorm* transform)
 
     QuaternionToAxisAngle(transform->rotation, &axis, &angle);
     Matrix matRotation = MatrixRotate(axis, angle);
-    Matrix matTranslation = MatrixTranslate(transform->translation.x, transform->translation.y, transform->translation.z);
+    Matrix matTranslation = MatrixTranslate(transform->position.x, transform->position.y, transform->position.z);
 
     return MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
 }
@@ -682,7 +682,7 @@ void rlmDrawModel(rlmModel model, rlmPQSTransorm transform)
 rlmPQSTransorm rlmPQSIdentity()
 {
     rlmPQSTransorm transform;
-    transform.translation = Vector3Zero();
+    transform.position = Vector3Zero();
     transform.rotation = QuaternionIdentity();
     transform.scale = Vector3{ 1,1,1 };
 
