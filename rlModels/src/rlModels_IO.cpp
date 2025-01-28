@@ -29,9 +29,9 @@ rlmModel rlmLoadFromModel(Model raylibModel)
         newGroup->material.baseChannel.textureId = raylibModel.materials[groupIndex].maps[MATERIAL_MAP_DIFFUSE].texture.id;
         newGroup->material.baseChannel.textureSlot = 0;
         newGroup->material.baseChannel.ownsTexture = true;
-        newGroup->material.baseChannel.shaderLoc = -1;
+        newGroup->material.baseChannel.textureLoc = -1;
 
-        newGroup->material.tint = raylibModel.materials[groupIndex].maps[MATERIAL_MAP_DIFFUSE].color;
+        newGroup->material.baseChannel.color= raylibModel.materials[groupIndex].maps[MATERIAL_MAP_DIFFUSE].color;
 
         newGroup->material.materialChannels = 0;
 
@@ -49,7 +49,11 @@ rlmModel rlmLoadFromModel(Model raylibModel)
             newGroup->material.extraChannels[extraIndex].textureId = raylibModel.materials[groupIndex].maps[MATERIAL_MAP_METALNESS].texture.id;
             newGroup->material.extraChannels[extraIndex].textureSlot = 1;
             newGroup->material.extraChannels[extraIndex].ownsTexture = true;
-            newGroup->material.extraChannels[extraIndex].shaderLoc = newGroup->material.shader.locs[SHADER_LOC_MAP_METALNESS];
+            newGroup->material.extraChannels[extraIndex].textureLoc = newGroup->material.shader.locs[SHADER_LOC_MAP_METALNESS];
+
+            newGroup->material.extraChannels[extraIndex].color = raylibModel.materials[groupIndex].maps[SHADER_LOC_MAP_METALNESS].color;
+            newGroup->material.extraChannels[extraIndex].colorLoc = newGroup->material.shader.locs[SHADER_LOC_COLOR_SPECULAR];
+
             extraIndex++;
         }
 
@@ -59,9 +63,10 @@ rlmModel rlmLoadFromModel(Model raylibModel)
             newGroup->material.extraChannels[extraIndex].textureId = raylibModel.materials[groupIndex].maps[MATERIAL_MAP_NORMAL].texture.id;
             newGroup->material.extraChannels[extraIndex].textureSlot = 2;
             newGroup->material.extraChannels[extraIndex].ownsTexture = true;
-            newGroup->material.extraChannels[extraIndex].shaderLoc = newGroup->material.shader.locs[SHADER_LOC_MAP_NORMAL];
+            newGroup->material.extraChannels[extraIndex].textureLoc = newGroup->material.shader.locs[SHADER_LOC_MAP_NORMAL];
             extraIndex++;
         }
+
         // TODO, process the otherMaps?
 
         // count the meshes with this material

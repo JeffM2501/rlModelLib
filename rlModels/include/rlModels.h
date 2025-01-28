@@ -44,10 +44,13 @@ typedef struct rlmMesh // a mesh
 typedef struct rlmMaterialChannel // a texture map in a material
 {
     int textureId;
-    bool ownsTexture;
-    int shaderLoc;
-    bool cubeMap;
+    int textureLoc;
     int textureSlot;
+    bool cubeMap;
+    bool ownsTexture;
+    Color color;
+    int colorLoc;
+
 }rlmMaterialChannel;
 
 typedef struct rlmMaterialDef // a shader and it's input texture
@@ -57,7 +60,6 @@ typedef struct rlmMaterialDef // a shader and it's input texture
     bool ownsShader;
 
     rlmMaterialChannel	baseChannel;
-    Color tint;		                // TODO, push this into the channel?
 
     int materialChannels;
     rlmMaterialChannel* extraChannels;
@@ -94,7 +96,7 @@ rlmMaterialDef rlmGetDefaultMaterial();
 
 void rlmUnloadMaterial(rlmMaterialDef* material);
 
-void rlmAddMaterialChannel(rlmMaterialDef* material, Texture2D texture, int shaderLoc, bool isCubeMap);
+void rlmAddMaterialChannel(rlmMaterialDef* material, Texture2D texture, int shaderLoc, int slot, bool isCubeMap);
 void rlmAddMaterialChannels(rlmMaterialDef* material, int count, Texture2D* textures, int* locs);
 
 void rlmSetMaterialDefShader(rlmMaterialDef* material, Shader shader);

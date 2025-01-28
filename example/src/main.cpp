@@ -29,7 +29,6 @@ Use this as a starting point or replace it with your code.
 #include "rlModels.h"	
 #include "rlModels_IO.h"
 
-
 Camera3D ViewCam = { 0 };
 
 rlmModel newModel = { 0 };
@@ -43,8 +42,9 @@ void GameInit()
     SetTargetFPS(144);
 
     ViewCam.fovy = 45;
-    ViewCam.position.z = -50;
+    ViewCam.position.z = -100;
     ViewCam.position.y = 25;
+    ViewCam.target.y = 12;
     ViewCam.up.y = 1;
 
     Model raylibModel = LoadModel("resources/castle.obj");
@@ -52,10 +52,12 @@ void GameInit()
 
     newModel = rlmLoadFromModel(raylibModel);
     newModel.groups[0].material.baseChannel.ownsTexture = true;
+    newModel.orientationTransform.translation.x = 25;
 
     cloneModel = rlmCloneModel(newModel);
 
-    cloneModel.orientationTransform.translation.x = 50;
+    cloneModel.orientationTransform.translation.x = -25;
+    cloneModel.orientationTransform.rotation = QuaternionFromAxisAngle(Vector3UnitY, 180 * DEG2RAD);
     rlmSetMaterialChannelTexture(&cloneModel.groups[0].material.baseChannel, LoadTexture("resources/castle_diffuse_blue.png"));
     cloneModel.groups[0].material.baseChannel.ownsTexture = true;
 }

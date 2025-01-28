@@ -254,7 +254,10 @@ rlmMaterialDef rlmGetDefaultMaterial()
 
     material.baseChannel.ownsTexture = false;
     material.baseChannel.textureId = rlGetTextureIdDefault();
-    material.baseChannel.shaderLoc = -1;
+    material.baseChannel.textureLoc = -1;
+
+    material.baseChannel.color = WHITE;
+    material.baseChannel.colorLoc = -1;
 
     material.extraChannels = 0;
     material.extraChannels = NULL;
@@ -294,7 +297,7 @@ void rlmUnloadMaterial(rlmMaterialDef* material)
     }
 }
 
-void rlmAddMaterialChannel(rlmMaterialDef* material, Texture2D texture, int shaderLoc, bool isCubeMap)
+void rlmAddMaterialChannel(rlmMaterialDef* material, Texture2D texture, int shaderLoc, int slot, bool isCubeMap)
 {
     if (!material)
         return;
@@ -313,7 +316,10 @@ void rlmAddMaterialChannel(rlmMaterialDef* material, Texture2D texture, int shad
     material->extraChannels[material->materialChannels - 1].ownsTexture = false;
     material->extraChannels[material->materialChannels - 1].cubeMap = isCubeMap;
     material->extraChannels[material->materialChannels - 1].textureId = texture.id;
-    material->extraChannels[material->materialChannels - 1].shaderLoc = shaderLoc;
+    material->extraChannels[material->materialChannels - 1].textureLoc = shaderLoc;
+    material->extraChannels[material->materialChannels - 1].textureSlot = slot;
+    material->extraChannels[material->materialChannels - 1].color = WHITE;
+    material->extraChannels[material->materialChannels - 1].colorLoc = -1;
 }
 
 void rlmAddMaterialChannels(rlmMaterialDef* material, int count, Texture2D* textures, int* locs)
@@ -339,15 +345,20 @@ void rlmAddMaterialChannels(rlmMaterialDef* material, int count, Texture2D* text
         material->extraChannels[material->materialChannels - 1].cubeMap = false;
         material->extraChannels[material->materialChannels - 1].ownsTexture = false;
 
+        material->extraChannels[material->materialChannels - 1].color = WHITE;
+        material->extraChannels[material->materialChannels - 1].colorLoc = -1;
+
+        material->extraChannels[material->materialChannels - 1].textureSlot = -1;
+
         if (textures && locs)
         {
             material->extraChannels[material->materialChannels - 1].textureId = textures[i].id;
-            material->extraChannels[material->materialChannels - 1].shaderLoc = locs[i];
+            material->extraChannels[material->materialChannels - 1].textureLoc = locs[i];
         }
         else
         {
             material->extraChannels[material->materialChannels - 1].textureId = 0;
-            material->extraChannels[material->materialChannels - 1].shaderLoc = -1;
+            material->extraChannels[material->materialChannels - 1].textureLoc = -1;
         }
     }
 }
@@ -384,8 +395,6 @@ void rlmCloneMaterial(const rlmMaterialDef* oldMaterial, rlmMaterialDef* newMate
 
     newMaterial->shader = oldMaterial->shader;
     newMaterial->ownsShader = false;
-
-    newMaterial->tint = oldMaterial->tint;
 
     newMaterial->materialChannels = oldMaterial->materialChannels;
 
@@ -466,6 +475,30 @@ void rlmUnloadModel(rlmModel* model)
     model->groups = NULL;
 }
 
+void rlmApplyMaterialChannel(rlmMaterialChannel* channel, int index = 0)
+{
+    if (!channel)
+        return;
+
+    rlActiveTextureSlot(channel->textureSlot);
+    if (channel->cubeMap)
+        rlEnableTextureCubemap(channel->textureId);
+    else
+        rlEnableTexture(channel->textureId);
+    rlSetUniform(channel->textureLoc, &channel->textureSlot, SHADER_UNIFORM_INT, 1);
+
+    if (channel->colorLoc > 0)
+    {
+        float values[4] = {
+               (float)channel->color.r / 255.0f,
+               (float)channel->color.g / 255.0f,
+               (float)channel->color.b / 255.0f,
+               (float)channel->color.a / 255.0f
+        };
+        rlSetUniform(channel->colorLoc, values, SHADER_UNIFORM_VEC4, 1);
+    }
+}
+
 void rlmApplyMaterialDef(rlmMaterialDef* material)
 {
     if (!material)
@@ -475,21 +508,10 @@ void rlmApplyMaterialDef(rlmMaterialDef* material)
 
     int index = 0;
 
-    rlActiveTextureSlot(0);
-    rlEnableTexture(material->baseChannel.textureId);
-    rlSetUniform(material->baseChannel.shaderLoc, &index, SHADER_UNIFORM_INT, 1);
+    rlmApplyMaterialChannel(&material->baseChannel);
 
     for (index = 1; index < material->materialChannels+1; index++)
-    {
-        rlActiveTextureSlot(index);
-
-        if (material->extraChannels[index - 1].cubeMap)
-            rlEnableTextureCubemap(material->extraChannels[index - 1].textureId);
-        else
-            rlEnableTexture(material->extraChannels[index-1].textureId);
-        
-        rlSetUniform(material->extraChannels[index - 1].shaderLoc, &index, SHADER_UNIFORM_INT, 1);
-    }
+        rlmApplyMaterialChannel(&material->extraChannels[index - 1]);
 }
 
 Matrix rlmPQSToMatrix(const rlmPQSTransorm* transform)
@@ -617,13 +639,7 @@ void rlmDrawModel(rlmModel model, rlmPQSTransorm transform)
 
         rlmApplyMaterialDef(&groupPtr->material);
 
-        float values[4] = {
-           (float)groupPtr->material.tint.r / 255.0f,
-           (float)groupPtr->material.tint.g / 255.0f,
-           (float)groupPtr->material.tint.b / 255.0f,
-           (float)groupPtr->material.tint.a / 255.0f
-        };
-        rlSetUniform(groupPtr->material.shader.locs[SHADER_LOC_COLOR_DIFFUSE], values, SHADER_UNIFORM_VEC4, 1);
+        
 
         // load uniforms
         // Get a copy of current matrices to work with,
