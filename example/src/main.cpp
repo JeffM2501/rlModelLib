@@ -52,11 +52,11 @@ void GameInit()
 
     newModel = rlmLoadFromModel(raylibModel);
     newModel.groups[0].material.baseChannel.ownsTexture = true;
-    newModel.orientationTransform.translation.x = 25;
+    newModel.orientationTransform.position.x = 25;
 
     cloneModel = rlmCloneModel(newModel);
 
-    cloneModel.orientationTransform.translation.x = -25;
+    cloneModel.orientationTransform.position.x = -25;
     cloneModel.orientationTransform.rotation = QuaternionFromAxisAngle(Vector3UnitY, 180 * DEG2RAD);
     rlmSetMaterialChannelTexture(&cloneModel.groups[0].material.baseChannel, LoadTexture("resources/castle_diffuse_blue.png"));
     cloneModel.groups[0].material.baseChannel.ownsTexture = true;

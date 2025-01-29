@@ -1,10 +1,57 @@
 #include "rlModels_IO.h"
 
 #include <stdio.h>
+#include <string.h>
 
 rlmModel rlmLoadFromModel(Model raylibModel)
 {
     rlmModel newModel = { 0 };
+
+    if (raylibModel.boneCount > 0 && raylibModel.bones != nullptr)
+    {
+        newModel.ownsSkeleton = true;
+
+        rlmSkeleton* skeleton = (rlmSkeleton*)MemAlloc(sizeof(rlmSkeleton));
+
+        skeleton->boneCount = raylibModel.boneCount;
+        skeleton->bones = (rlmBoneInfo*)MemAlloc(sizeof(rlmBoneInfo) * skeleton->boneCount);
+
+        skeleton->bindingFrame.boneTransforms = (rlmPQSTransorm*)MemAlloc(sizeof(rlmPQSTransorm) * skeleton->boneCount);
+
+        for (int i = 0; i < skeleton->boneCount; i++)
+        {
+            skeleton->bones[i].boneId = i;
+            skeleton->bones[i].name[0] = '\0';
+            strcpy(skeleton->bones[i].name, raylibModel.bones[i].name);
+
+            skeleton->bones[i].parentId = raylibModel.bones[i].parent;
+            skeleton->bones[i].childBones = NULL;
+            skeleton->bones[i].childCount = 0;
+
+            skeleton->bindingFrame.boneTransforms[i].position = raylibModel.bindPose[i].translation;
+            skeleton->bindingFrame.boneTransforms[i].scale = raylibModel.bindPose[i].scale;
+            skeleton->bindingFrame.boneTransforms[i].rotation = raylibModel.bindPose[i].rotation;
+        }
+
+        for (int i = 0; i < skeleton->boneCount; i++)
+        {
+            if (skeleton->bones[i].parentId < 0)
+            {
+                skeleton->rootBone = &skeleton->bones[i];
+            }
+            else
+            {
+                rlmBoneInfo* parentBone = &skeleton->bones[skeleton->bones[i].parentId];
+                parentBone->childCount++;
+                parentBone->childBones = (rlmBoneInfo**)MemRealloc(parentBone->childBones, sizeof(rlmBoneInfo*) * parentBone->childCount);
+                parentBone->childBones[parentBone->childCount - 1] = &skeleton->bones[i];
+            }
+        }
+
+        // TODO, make children relative
+
+        newModel.skeleton = skeleton;
+    }
 
     newModel.orientationTransform = rlmPQSIdentity();
 
@@ -77,12 +124,15 @@ rlmModel rlmLoadFromModel(Model raylibModel)
                 newGroup->meshCount++;
         }
         newGroup->meshes = (rlmMesh*)MemAlloc(sizeof(rlmMesh) * newGroup->meshCount);
+        newGroup->meshDisableFlags = (bool*)MemAlloc(sizeof(bool) * newGroup->meshCount);
 
         int meshIndex = 0;
         for (int m = 0; m < raylibModel.meshCount; m++)
         {
             if (raylibModel.meshMaterial[m] != groupIndex)
                 continue;
+
+            newGroup->meshDisableFlags[meshIndex] = false;
 
             Mesh* oldMesh = raylibModel.meshes + m;
 

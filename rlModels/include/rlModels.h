@@ -4,22 +4,20 @@
 #include "raylib.h"
 #include "raymath.h"
 
-typedef struct rlmGPUMesh	// data needed to draw a mesh
+typedef struct rlmGPUMesh	// minimum data needed to draw a mesh on the GPU
 {
-    unsigned int vaoId;     // OpenGL Vertex Array Object id
-    unsigned int* vboIds;    // OpenGL Vertex Buffer Objects id (default vertex data)
+    unsigned int vaoId;
+    unsigned int* vboIds;
 
     bool isIndexed;
     unsigned int elementCount;
-
 }rlmGPUMesh;
 
-typedef struct rlmMeshBuffers	// geometry buffers used to define a mesh
+typedef struct rlmMeshBuffers	//CPU geometry buffers used to define a mesh
 {
     int vertexCount;        // Number of vertices stored in arrays
     int triangleCount;      // Number of triangles stored (indexed or not)
 
-    // Vertex attributes data
     float* vertices;        // Vertex position (XYZ - 3 components per vertex) (shader-location = 0)
     float* texcoords;       // Vertex texture coordinates (UV - 2 components per vertex) (shader-location = 1)
     float* texcoords2;      // Vertex texture second coordinates (UV - 2 components per vertex) (shader-location = 5)
@@ -28,7 +26,6 @@ typedef struct rlmMeshBuffers	// geometry buffers used to define a mesh
     unsigned char* colors;      // Vertex colors (RGBA - 4 components per vertex) (shader-location = 3)
     unsigned short* indices;    // Vertex indices (in case vertex data comes indexed)
 
-    // Animation vertex data
     unsigned char* boneIds; // Vertex bone ids, max 255 bone ids, up to 4 bones influence by vertex (skinning) (shader-location = 6)
     float* boneWeights;     // Vertex bone weight, up to 4 bones influence by vertex (skinning) (shader-location = 7)
 }rlmMeshBuffers;
@@ -46,11 +43,12 @@ typedef struct rlmMaterialChannel // a texture map in a material
     int textureId;
     int textureLoc;
     int textureSlot;
-    bool cubeMap;
-    bool ownsTexture;
+
     Color color;
     int colorLoc;
 
+    bool cubeMap;
+    bool ownsTexture;
 }rlmMaterialChannel;
 
 typedef struct rlmMaterialDef // a shader and it's input texture
@@ -72,7 +70,7 @@ typedef struct rlmModelGroup // a group of meshes that share a material
     bool ownsMeshList;
     int meshCount;
     rlmMesh* meshes;
-    bool* meshEnableFlags;
+    bool* meshDisableFlags;
 }rlmModelGroup; 
 
 typedef struct rlmPQSTransorm // a transform with a position, quaternion rotation, scale
@@ -91,16 +89,18 @@ typedef struct rlmBoneInfo  // a node in the bone tree
 
     int childCount;
     rlmBoneInfo** childBones;
-};
+}rlmBoneInfo;
 
-typedef struct rlmAnimationKeyframe // a list of local space bone transforms for a skeleton
+typedef struct rlmAnimationKeyframe // a list of bone transforms for a skeleton
 {
     rlmPQSTransorm* boneTransforms;
-};
+}rlmAnimationKeyframe;
 
 typedef struct rlmSkeleton // a tree of bones, and the keyframe for it's binding pose
 {
     int boneCount;
+    rlmBoneInfo* bones;
+
     rlmBoneInfo* rootBone;
 
     rlmAnimationKeyframe bindingFrame;
@@ -109,22 +109,24 @@ typedef struct rlmSkeleton // a tree of bones, and the keyframe for it's binding
 typedef struct rlmModelAnimationPose    // a list of model space matricides baked out for display of an animation
 {
     Matrix* boneMatricies;
-};
+}rlmModelAnimationPose;
 
-typedef struct rlmModelAniamtionSequence
+typedef struct rlmModelAniamtionSequence    // a named sequence of keyframes
 {
     char name[64];
     float fps;
 
     int keyframeCount;
     rlmAnimationKeyframe*    keyframes;
-};
+}rlmModelAniamtionSequence;
 
 typedef struct rlmModel // a group of meshes, materials, and an orientation transform
 {
     int groupCount;
     rlmModelGroup* groups;
     rlmPQSTransorm orientationTransform;
+
+    bool ownsSkeleton;
     rlmSkeleton* skeleton;
 }rlmModel;
 
@@ -160,21 +162,27 @@ void rlmDrawModelWithPose(rlmModel model, rlmPQSTransorm transform, rlmModelAnim
 rlmModelAnimationPose rlmLoadPoseFromModel(rlmModel model);
 void rlmUnloadPose(rlmModelAnimationPose* pose);
 
-void rlmSetPoseToKeyframe(rlmModel model, rlmAnimationKeyframe frame);
-void rlmSetPoseToKeyframeEx(rlmModel model, rlmAnimationKeyframe frame, rlmBoneInfo * startBone);
+void rlmSetPoseToKeyframe(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame);
+void rlmSetPoseToKeyframeEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame, rlmBoneInfo * startBone);
 
-void rlmSetPoseToKeyframesLerp(rlmModel model, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param);
-void rlmSetPoseToKeyframesLerpEx(rlmModel model, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param, rlmBoneInfo* startBone);
+void rlmSetPoseToKeyframesLerp(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param);
+void rlmSetPoseToKeyframesLerpEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param, rlmBoneInfo* startBone);
 
 rlmBoneInfo* rlmFindBoneByName(rlmModel model, const char* boneName);
-
 
 // transform utility
 rlmPQSTransorm rlmPQSIdentity();
 rlmPQSTransorm rlmPQSTranslation(float x, float y, float z);
 
-// TODO, some math operators, add/subtract at a minimum
+rlmPQSTransorm rlmPQSTransformAdd(rlmPQSTransorm lhs, rlmPQSTransorm rhs);
+rlmPQSTransorm rlmPQSTransformSubtract(rlmPQSTransorm lhs, rlmPQSTransorm rhs);
+
+rlmPQSTransorm rlmPQSLerp(const rlmPQSTransorm *lhs, const rlmPQSTransorm* rhs, float param);
 
 // state API
 void rlmSetDefaultMaterialShader(Shader shader);
 void rlmClearDefaultMaterialShader();
+
+#if defined (RLMODELS_IMPLEMENTATION)
+    // TODO put the guts here once it all works
+#endif

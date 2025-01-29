@@ -418,6 +418,9 @@ rlmModel rlmCloneModel(rlmModel model)
 
     newModel.groupCount = model.groupCount;
 
+    newModel.skeleton = model.skeleton;
+    newModel.ownsSkeleton = false;
+
     newModel.groups = (rlmModelGroup*)MemAlloc(sizeof(rlmModelGroup) * newModel.groupCount);
     for (int group = 0; group < newModel.groupCount; group++)
     {
@@ -428,6 +431,10 @@ rlmModel rlmCloneModel(rlmModel model)
 
         newGroup->ownsMeshes = false;
         newGroup->ownsMeshList = false;
+
+        newGroup->meshDisableFlags = (bool*)MemAlloc(sizeof(bool) * oldGroup->meshCount);
+        for (int i = 0; i < oldGroup->meshCount; i++)
+            newGroup->meshDisableFlags[i] = oldGroup->meshDisableFlags[i];
 
         newGroup->meshCount = oldGroup->meshCount;
         newGroup->meshes = oldGroup->meshes;
@@ -466,6 +473,10 @@ void rlmUnloadModel(rlmModel* model)
 
         if (groupPtr->ownsMeshList)
             MemFree(groupPtr->meshes);
+
+        MemFree(groupPtr->meshDisableFlags);
+
+        groupPtr->meshDisableFlags = NULL;
         groupPtr->meshCount = 0;
         groupPtr->meshes = 0;
     }
@@ -473,6 +484,19 @@ void rlmUnloadModel(rlmModel* model)
     model->groupCount = 0;
     MemFree(model->groups);
     model->groups = NULL;
+
+    if (model->ownsSkeleton && model->skeleton)
+    {
+        MemFree(model->skeleton->bones);
+        model->skeleton->bones = NULL;
+        MemFree(model->skeleton->bindingFrame.boneTransforms);
+        model->skeleton->bindingFrame.boneTransforms = NULL;
+
+        MemFree(model->skeleton);
+    }
+
+    model->ownsSkeleton = false;
+    model->skeleton = NULL;
 }
 
 void rlmApplyMaterialChannel(rlmMaterialChannel* channel, int index = 0)
@@ -526,6 +550,15 @@ Matrix rlmPQSToMatrix(const rlmPQSTransorm* transform)
     Matrix matTranslation = MatrixTranslate(transform->position.x, transform->position.y, transform->position.z);
 
     return MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
+}
+
+rlmPQSTransorm rlmPQSFromMatrix(const Matrix* matrix)
+{
+    rlmPQSTransorm transform;
+
+    MatrixDecompose(*matrix, &transform.position, &transform.rotation, &transform.scale);
+   
+    return transform;
 }
 
 void rlmDrawMesh(rlmGPUMesh* mesh, Shader* shader)
@@ -618,7 +651,6 @@ void rlmDrawMesh(rlmGPUMesh* mesh, Shader* shader)
     else
         rlDrawVertexArray(0, mesh->elementCount);
 
-
     // Disable all possible vertex array objects (or VBOs)
     rlDisableVertexArray();
     rlDisableVertexBuffer();
@@ -638,8 +670,6 @@ void rlmDrawModel(rlmModel model, rlmPQSTransorm transform)
         rlmModelGroup* groupPtr = model.groups + group;
 
         rlmApplyMaterialDef(&groupPtr->material);
-
-        
 
         // load uniforms
         // Get a copy of current matrices to work with,
@@ -672,12 +702,176 @@ void rlmDrawModel(rlmModel model, rlmPQSTransorm transform)
         
         // draw the meshes
         for (int i = 0; i < groupPtr->meshCount; i++)
-            rlmDrawMesh(&groupPtr->meshes[i].gpuMesh, &groupPtr->material.shader);
+        {
+            if (groupPtr->meshDisableFlags == NULL || !groupPtr->meshDisableFlags[i])
+                rlmDrawMesh(&groupPtr->meshes[i].gpuMesh, &groupPtr->material.shader);
+        }
 
         // Disable shader program
         rlDisableShader();
     }
 }
+
+void rlmDrawModelWithPose(rlmModel model, rlmPQSTransorm transform, rlmModelAnimationPose* pose)
+{
+    Matrix transformMatrix = rlmPQSToMatrix(&transform);
+    Matrix modelMatrix = MatrixMultiply(rlmPQSToMatrix(&model.orientationTransform), transformMatrix);
+
+    // add in the rlgl matrix stack
+    Matrix matModel = MatrixMultiply(modelMatrix, rlGetMatrixTransform());
+
+    for (int group = 0; group < model.groupCount; group++)
+    {
+        rlmModelGroup* groupPtr = model.groups + group;
+
+        rlmApplyMaterialDef(&groupPtr->material);
+
+        if (groupPtr->material.shader.locs[SHADER_LOC_VERTEX_BONEIDS] >= 0)
+        {
+            if (pose)
+            {
+                // load the pose matricies
+            }
+            else
+            {
+                // load a big ass list of identities
+            }
+        }
+
+        // load uniforms
+        // Get a copy of current matrices to work with,
+        // just in case stereo render is required, and we need to modify them
+        // NOTE: At this point the modelview matrix just contains the view matrix (camera)
+        // That's because BeginMode3D() sets it and there is no model-drawing function
+        // that modifies it, all use rlPushMatrix() and rlPopMatrix()
+        Matrix matView = rlGetMatrixModelview();
+        Matrix matProjection = rlGetMatrixProjection();
+        Matrix matModelView = MatrixMultiply(matModel, matView);
+        Matrix matModelViewProjection = MatrixMultiply(matModelView, matProjection);
+
+        // Upload view and projection matrices (if locations available)
+        if (groupPtr->material.shader.locs[SHADER_LOC_MATRIX_VIEW] != -1)
+            rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_VIEW], matView);
+
+        if (groupPtr->material.shader.locs[SHADER_LOC_MATRIX_PROJECTION] != -1)
+            rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_PROJECTION], matProjection);
+
+        // Model transformation matrix is sent to shader uniform location: SHADER_LOC_MATRIX_MODEL
+        if (groupPtr->material.shader.locs[SHADER_LOC_MATRIX_MODEL] != -1)
+            rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_MODEL], matModel);
+
+        // Upload model normal matrix (if locations available)
+        if (groupPtr->material.shader.locs[SHADER_LOC_MATRIX_NORMAL] != -1)
+            rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_NORMAL], MatrixTranspose(MatrixInvert(matModel)));
+
+        // Send combined model-view-projection matrix to shader
+        rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_MVP], matModelViewProjection);
+
+        // draw the meshes
+        for (int i = 0; i < groupPtr->meshCount; i++)
+        {
+            if (groupPtr->meshDisableFlags == NULL || !groupPtr->meshDisableFlags[i])
+                rlmDrawMesh(&groupPtr->meshes[i].gpuMesh, &groupPtr->material.shader);
+        }
+
+        // Disable shader program
+        rlDisableShader();
+}
+
+static void rlmSetBonePoseRecursive(const rlmBoneInfo* bone, const rlmAnimationKeyframe* keyframe, rlmModelAnimationPose* pose)
+{
+    pose->boneMatricies[bone->boneId] = rlmPQSToMatrix(&keyframe->boneTransforms[bone->boneId]);
+
+    for (int i = 0; i < bone->childCount; i++)
+    {
+        rlmSetBonePoseRecursive(bone->childBones[i], keyframe, pose);
+    }
+}
+
+static void rlmSetBonePoseRecursiveLerp(const rlmBoneInfo* bone, const rlmAnimationKeyframe* keyframe1, const rlmAnimationKeyframe* keyframe2, float param, rlmModelAnimationPose* pose)
+{
+    pose->boneMatricies[bone->boneId] = rlmPQSToMatrix(&rlmPQSLerp(&keyframe1->boneTransforms[bone->boneId], &keyframe2->boneTransforms[bone->boneId], param));
+
+    for (int i = 0; i < bone->childCount; i++)
+    {
+        rlmSetBonePoseRecursiveLerp(bone->childBones[i], keyframe1, keyframe2, param, pose);
+    }
+}
+
+rlmModelAnimationPose rlmLoadPoseFromModel(rlmModel model)
+{
+    rlmModelAnimationPose pose = { 0 };
+
+    if (model.skeleton)
+    {
+        pose.boneMatricies = (Matrix*)MemAlloc(sizeof(Matrix) * model.skeleton->boneCount);
+
+        for (int i = 0; i < model.skeleton->boneCount; i++)
+            pose.boneMatricies[i] = MatrixIdentity();
+    }
+    return pose;
+}
+
+void rlmUnloadPose(rlmModelAnimationPose* pose)
+{
+    if (!pose)
+        return;
+
+    MemFree(pose->boneMatricies);
+    pose->boneMatricies = NULL;
+}
+
+void rlmSetPoseToKeyframe(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame)
+{
+    if (!model.skeleton)
+        return;
+
+    rlmSetBonePoseRecursive(model.skeleton->rootBone, &frame, pose);
+}
+
+void rlmSetPoseToKeyframeEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame, rlmBoneInfo* startBone)
+{
+    if (!model.skeleton)
+        return;
+
+    if (startBone == nullptr)
+        startBone = model.skeleton->rootBone;
+
+    rlmSetBonePoseRecursive(startBone, &frame, pose);
+}
+
+void rlmSetPoseToKeyframesLerp(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param)
+{
+    if (!model.skeleton)
+        return;
+
+    rlmSetBonePoseRecursiveLerp(model.skeleton->rootBone, &frame1, &frame2, param, pose);
+}
+
+void rlmSetPoseToKeyframesLerpEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param, rlmBoneInfo* startBone)
+{
+    if (!model.skeleton)
+        return;
+
+    if (startBone == nullptr)
+        startBone = model.skeleton->rootBone;
+
+    rlmSetBonePoseRecursiveLerp(startBone, &frame1, &frame2, param, pose);
+}
+
+rlmBoneInfo* rlmFindBoneByName(rlmModel model, const char* boneName)
+{
+    if (!model.skeleton || !boneName)
+        return NULL;
+
+    for (int i = 0; i < model.skeleton->boneCount; i++)
+    {
+        if (TextIsEqual(model.skeleton->bones[i].name, boneName))
+            return &model.skeleton->bones[i];
+    }
+    return NULL;
+}
+
 
 rlmPQSTransorm rlmPQSIdentity()
 {
@@ -687,4 +881,35 @@ rlmPQSTransorm rlmPQSIdentity()
     transform.scale = Vector3{ 1,1,1 };
 
     return transform;
+}
+
+rlmPQSTransorm rlmPQSTranslation(float x, float y, float z)
+{
+    rlmPQSTransorm transform;
+    transform.position = Vector3{ x,y,z };
+    transform.rotation = QuaternionIdentity();
+    transform.scale = Vector3{ 1,1,1 };
+
+    return transform;
+}
+
+rlmPQSTransorm rlmPQSTransformAdd(rlmPQSTransorm lhs, rlmPQSTransorm rhs)
+{
+    return rlmPQSFromMatrix(&MatrixAdd(rlmPQSToMatrix(&lhs), rlmPQSToMatrix(&rhs)));
+}
+
+rlmPQSTransorm rlmPQSTransformSubtract(rlmPQSTransorm lhs, rlmPQSTransorm rhs)
+{
+    return rlmPQSFromMatrix(&MatrixSubtract(rlmPQSToMatrix(&lhs), rlmPQSToMatrix(&rhs)));
+}
+
+rlmPQSTransorm rlmPQSLerp(const rlmPQSTransorm* lhs, const rlmPQSTransorm* rhs, float param)
+{
+    rlmPQSTransorm transform;
+    transform.position = Vector3Lerp(lhs->position, rhs->position, param);
+    transform.rotation = QuaternionSlerp(lhs->rotation, rhs->rotation, param);
+    transform.scale = Vector3Lerp(lhs->scale, rhs->scale, param);
+
+    return transform;
+
 }
