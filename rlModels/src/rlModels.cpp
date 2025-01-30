@@ -730,7 +730,7 @@ void rlmDrawModelWithPose(rlmModel model, rlmPQSTransorm transform, rlmModelAnim
         {
             if (pose)
             {
-                // load the pose matricies
+                // load the pose matricides
             }
             else
             {
@@ -776,25 +776,44 @@ void rlmDrawModelWithPose(rlmModel model, rlmPQSTransorm transform, rlmModelAnim
 
         // Disable shader program
         rlDisableShader();
-}
-
-static void rlmSetBonePoseRecursive(const rlmBoneInfo* bone, const rlmAnimationKeyframe* keyframe, rlmModelAnimationPose* pose)
-{
-    pose->boneMatricies[bone->boneId] = rlmPQSToMatrix(&keyframe->boneTransforms[bone->boneId]);
-
-    for (int i = 0; i < bone->childCount; i++)
-    {
-        rlmSetBonePoseRecursive(bone->childBones[i], keyframe, pose);
     }
 }
 
-static void rlmSetBonePoseRecursiveLerp(const rlmBoneInfo* bone, const rlmAnimationKeyframe* keyframe1, const rlmAnimationKeyframe* keyframe2, float param, rlmModelAnimationPose* pose)
+Matrix rlmGetBoneMatrix(const rlmPQSTransorm * bindingTransform, const rlmPQSTransorm * frameTransform)
 {
-    pose->boneMatricies[bone->boneId] = rlmPQSToMatrix(&rlmPQSLerp(&keyframe1->boneTransforms[bone->boneId], &keyframe2->boneTransforms[bone->boneId], param));
+    Vector3 invTranslation = Vector3RotateByQuaternion(Vector3Negate(bindingTransform->position), QuaternionInvert(bindingTransform->rotation));
+    Quaternion invRotation = QuaternionInvert(bindingTransform->rotation);
+    Vector3 invScale = Vector3Divide(Vector3Ones, bindingTransform->scale);
+
+    Vector3 boneTranslation = Vector3Add(Vector3RotateByQuaternion(Vector3Multiply(frameTransform->scale, invTranslation), frameTransform->rotation), frameTransform->position);
+    Quaternion boneRotation = QuaternionMultiply(frameTransform->rotation, invRotation);
+    Vector3 boneScale = Vector3Multiply(frameTransform->scale, invScale);
+
+    Matrix boneMatrix = MatrixMultiply(MatrixMultiply(
+        QuaternionToMatrix(boneRotation),
+        MatrixTranslate(boneTranslation.x, boneTranslation.y, boneTranslation.z)),
+        MatrixScale(boneScale.x, boneScale.y, boneScale.z));
+
+    return boneMatrix;
+}
+
+static void rlmSetBonePoseRecursive(const rlmBoneInfo* bone, const rlmAnimationKeyframe* bindingFrame, const rlmAnimationKeyframe* keyframe, rlmModelAnimationPose* pose)
+{
+    pose->boneMatricies[bone->boneId] = rlmGetBoneMatrix(&bindingFrame->boneTransforms[bone->boneId], & keyframe->boneTransforms[bone->boneId]);
 
     for (int i = 0; i < bone->childCount; i++)
     {
-        rlmSetBonePoseRecursiveLerp(bone->childBones[i], keyframe1, keyframe2, param, pose);
+        rlmSetBonePoseRecursive(bone->childBones[i], bindingFrame, keyframe, pose);
+    }
+}
+
+static void rlmSetBonePoseRecursiveLerp(const rlmBoneInfo* bone, const rlmAnimationKeyframe* bindingFrame, const rlmAnimationKeyframe* keyframe1, const rlmAnimationKeyframe* keyframe2, float param, rlmModelAnimationPose* pose)
+{
+    pose->boneMatricies[bone->boneId] = rlmGetBoneMatrix(&bindingFrame->boneTransforms[bone->boneId], &rlmPQSLerp(&keyframe1->boneTransforms[bone->boneId], &keyframe2->boneTransforms[bone->boneId], param));
+
+    for (int i = 0; i < bone->childCount; i++)
+    {
+        rlmSetBonePoseRecursiveLerp(bone->childBones[i], bindingFrame, keyframe1, keyframe2, param, pose);
     }
 }
 
@@ -826,7 +845,7 @@ void rlmSetPoseToKeyframe(rlmModel model, rlmModelAnimationPose* pose, rlmAnimat
     if (!model.skeleton)
         return;
 
-    rlmSetBonePoseRecursive(model.skeleton->rootBone, &frame, pose);
+    rlmSetBonePoseRecursive(model.skeleton->rootBone, &model.skeleton->bindingFrame, &frame, pose);
 }
 
 void rlmSetPoseToKeyframeEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame, rlmBoneInfo* startBone)
@@ -837,7 +856,7 @@ void rlmSetPoseToKeyframeEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnim
     if (startBone == nullptr)
         startBone = model.skeleton->rootBone;
 
-    rlmSetBonePoseRecursive(startBone, &frame, pose);
+    rlmSetBonePoseRecursive(startBone, &model.skeleton->bindingFrame, &frame, pose);
 }
 
 void rlmSetPoseToKeyframesLerp(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param)
@@ -845,7 +864,7 @@ void rlmSetPoseToKeyframesLerp(rlmModel model, rlmModelAnimationPose* pose, rlmA
     if (!model.skeleton)
         return;
 
-    rlmSetBonePoseRecursiveLerp(model.skeleton->rootBone, &frame1, &frame2, param, pose);
+    rlmSetBonePoseRecursiveLerp(model.skeleton->rootBone, &model.skeleton->bindingFrame, &frame1, &frame2, param, pose);
 }
 
 void rlmSetPoseToKeyframesLerpEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param, rlmBoneInfo* startBone)
@@ -856,7 +875,7 @@ void rlmSetPoseToKeyframesLerpEx(rlmModel model, rlmModelAnimationPose* pose, rl
     if (startBone == nullptr)
         startBone = model.skeleton->rootBone;
 
-    rlmSetBonePoseRecursiveLerp(startBone, &frame1, &frame2, param, pose);
+    rlmSetBonePoseRecursiveLerp(startBone, &model.skeleton->bindingFrame, &frame1, &frame2, param, pose);
 }
 
 rlmBoneInfo* rlmFindBoneByName(rlmModel model, const char* boneName)
@@ -911,5 +930,4 @@ rlmPQSTransorm rlmPQSLerp(const rlmPQSTransorm* lhs, const rlmPQSTransorm* rhs, 
     transform.scale = Vector3Lerp(lhs->scale, rhs->scale, param);
 
     return transform;
-
 }

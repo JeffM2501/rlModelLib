@@ -51,6 +51,9 @@ rlmModel rlmLoadFromModel(Model raylibModel)
         // TODO, make children relative
 
         newModel.skeleton = skeleton;
+
+        MemFree(raylibModel.bindPose);
+        MemFree(raylibModel.bones);
     }
 
     newModel.orientationTransform = rlmPQSIdentity();
@@ -172,8 +175,6 @@ rlmModel rlmLoadFromModel(Model raylibModel)
         }
     }
 
-    MemFree(raylibModel.bindPose);
-    MemFree(raylibModel.bones);
     MemFree(raylibModel.materials);
     MemFree(raylibModel.meshMaterial);
     MemFree(raylibModel.meshes);

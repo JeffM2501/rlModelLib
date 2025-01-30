@@ -25,7 +25,6 @@ Use this as a starting point or replace it with your code.
 #include "raylib.h"
 #include "raymath.h"
 
-#include "game.h" 
 #include "rlModels.h"	
 #include "rlModels_IO.h"
 
@@ -38,7 +37,7 @@ rlmModel cloneModel = { 0 };
 void GameInit()
 {
     SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE);
-    InitWindow(InitalWidth, InitalHeight, "Example");
+    InitWindow(1280, 800, "Example");
     SetTargetFPS(144);
 
     ViewCam.fovy = 45;
