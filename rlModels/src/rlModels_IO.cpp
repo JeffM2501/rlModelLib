@@ -7,7 +7,7 @@ rlmModel rlmLoadFromModel(Model raylibModel)
 {
     rlmModel newModel = { 0 };
 
-    if (raylibModel.boneCount > 0 && raylibModel.bones != nullptr)
+    if (false && raylibModel.boneCount > 0 && raylibModel.bones != nullptr)
     {
         newModel.ownsSkeleton = true;
 
@@ -81,7 +81,8 @@ rlmModel rlmLoadFromModel(Model raylibModel)
         newGroup->material.baseChannel.ownsTexture = true;
         newGroup->material.baseChannel.textureLoc = -1;
 
-        newGroup->material.baseChannel.color= raylibModel.materials[groupIndex].maps[MATERIAL_MAP_DIFFUSE].color;
+        newGroup->material.baseChannel.color = raylibModel.materials[groupIndex].maps[MATERIAL_MAP_DIFFUSE].color;
+        newGroup->material.baseChannel.colorLoc = -SHADER_LOC_COLOR_DIFFUSE;
 
         newGroup->material.materialChannels = 0;
 
@@ -102,7 +103,7 @@ rlmModel rlmLoadFromModel(Model raylibModel)
             newGroup->material.extraChannels[extraIndex].textureLoc = newGroup->material.shader.locs[SHADER_LOC_MAP_METALNESS];
 
             newGroup->material.extraChannels[extraIndex].color = raylibModel.materials[groupIndex].maps[SHADER_LOC_MAP_METALNESS].color;
-            newGroup->material.extraChannels[extraIndex].colorLoc = newGroup->material.shader.locs[SHADER_LOC_COLOR_SPECULAR];
+            newGroup->material.extraChannels[extraIndex].colorLoc = -SHADER_LOC_COLOR_SPECULAR;
 
             extraIndex++;
         }

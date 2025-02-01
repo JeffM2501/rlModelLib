@@ -34,6 +34,8 @@ rlmModel newModel = { 0 };
 
 Model raylibModel = { 0 };
 
+rlmModelAnimationPose pose = { 0 };
+
 void GameInit()
 {
     SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE);
@@ -48,7 +50,15 @@ void GameInit()
 
     raylibModel = LoadModel("resources/robot.glb");
 
-   newModel = rlmLoadFromModel(raylibModel);
+    Shader shader = LoadShader("resources/skinning.vs", "resources/skinning.fs");
+
+   
+    newModel = rlmLoadFromModel(raylibModel);
+
+    for (int i = 0; i < newModel.groupCount; i++)
+        rlmSetMaterialDefShader(&newModel.groups[i].material, shader);
+
+    pose = rlmLoadPoseFromModel(newModel);
   }
 
 void GameCleanup()
@@ -71,9 +81,9 @@ void GameDraw()
     ClearBackground(DARKGRAY);
     BeginMode3D(ViewCam);
 
-   // DrawModel(raylibModel, Vector3Zeros, 1, WHITE);
+  //DrawModel(raylibModel, Vector3Zeros, 1, WHITE);
 
-    rlmDrawModel(newModel, rlmPQSIdentity());
+    rlmDrawModelWithPose(newModel, rlmPQSIdentity(), &pose);
 
     DrawGrid(100, 1);
 

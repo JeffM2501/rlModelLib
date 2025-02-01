@@ -8,6 +8,19 @@
 static Shader DefaultMaterialShader = { 0 };
 static bool DefaultMaterialShaderSet = false;
 
+#define MAX_BONE_NUM 128
+static Matrix DefaultBoneMatricies[MAX_BONE_NUM] = { 0 };
+
+static void CheckGlobalBoneMatricies()
+{
+    if (DefaultBoneMatricies[0].m0 != 0)
+        return;
+
+    for (int i = 0; i < MAX_BONE_NUM; i++)
+        DefaultBoneMatricies[i] = MatrixIdentity();
+}
+
+
 void rlmSetDefaultMaterialShader(Shader shader)
 {
     DefaultMaterialShader = shader;
@@ -257,7 +270,7 @@ rlmMaterialDef rlmGetDefaultMaterial()
     material.baseChannel.textureLoc = -1;
 
     material.baseChannel.color = WHITE;
-    material.baseChannel.colorLoc = -1;
+    material.baseChannel.colorLoc = -SHADER_LOC_COLOR_DIFFUSE;
 
     material.extraChannels = 0;
     material.extraChannels = NULL;
@@ -319,7 +332,7 @@ void rlmAddMaterialChannel(rlmMaterialDef* material, Texture2D texture, int shad
     material->extraChannels[material->materialChannels - 1].textureLoc = shaderLoc;
     material->extraChannels[material->materialChannels - 1].textureSlot = slot;
     material->extraChannels[material->materialChannels - 1].color = WHITE;
-    material->extraChannels[material->materialChannels - 1].colorLoc = -1;
+    material->extraChannels[material->materialChannels - 1].colorLoc =  0;
 }
 
 void rlmAddMaterialChannels(rlmMaterialDef* material, int count, Texture2D* textures, int* locs)
@@ -499,7 +512,7 @@ void rlmUnloadModel(rlmModel* model)
     model->skeleton = NULL;
 }
 
-void rlmApplyMaterialChannel(rlmMaterialChannel* channel, int index = 0)
+void rlmApplyMaterialChannel(rlmMaterialChannel* channel, Shader *shader,int index = 0)
 {
     if (!channel)
         return;
@@ -511,7 +524,11 @@ void rlmApplyMaterialChannel(rlmMaterialChannel* channel, int index = 0)
         rlEnableTexture(channel->textureId);
     rlSetUniform(channel->textureLoc, &channel->textureSlot, SHADER_UNIFORM_INT, 1);
 
-    if (channel->colorLoc > 0)
+    int locToUse = channel->colorLoc;
+    if (locToUse < 0)
+        locToUse = shader->locs[locToUse*-1];
+
+   // if (locToUse > 0)
     {
         float values[4] = {
                (float)channel->color.r / 255.0f,
@@ -519,7 +536,7 @@ void rlmApplyMaterialChannel(rlmMaterialChannel* channel, int index = 0)
                (float)channel->color.b / 255.0f,
                (float)channel->color.a / 255.0f
         };
-        rlSetUniform(channel->colorLoc, values, SHADER_UNIFORM_VEC4, 1);
+        rlSetUniform(locToUse, values, SHADER_UNIFORM_VEC4, 1);
     }
 }
 
@@ -532,10 +549,10 @@ void rlmApplyMaterialDef(rlmMaterialDef* material)
 
     int index = 0;
 
-    rlmApplyMaterialChannel(&material->baseChannel);
+    rlmApplyMaterialChannel(&material->baseChannel, &material->shader);
 
     for (index = 1; index < material->materialChannels+1; index++)
-        rlmApplyMaterialChannel(&material->extraChannels[index - 1]);
+        rlmApplyMaterialChannel(&material->extraChannels[index - 1], &material->shader);
 }
 
 Matrix rlmPQSToMatrix(const rlmPQSTransorm* transform)
@@ -726,15 +743,22 @@ void rlmDrawModelWithPose(rlmModel model, rlmPQSTransorm transform, rlmModelAnim
 
         rlmApplyMaterialDef(&groupPtr->material);
 
-        if (groupPtr->material.shader.locs[SHADER_LOC_VERTEX_BONEIDS] >= 0)
+        // if the shader wants bones, set some bone matricies
+        if (groupPtr->material.shader.locs[SHADER_LOC_BONE_MATRICES] >= 0)
         {
-            if (pose)
+            // if we have a real pose, use it
+            if (model.skeleton && pose)
             {
-                // load the pose matricides
+                rlSetUniformMatrices(groupPtr->material.shader.locs[SHADER_LOC_BONE_MATRICES], pose->boneMatricies, model.skeleton->boneCount);
             }
-            else
+            else // otherwise just fill out a list of default bones.
             {
-                // load a big ass list of identities
+                int count = MAX_BONE_NUM;
+                if (model.skeleton)
+                    count = model.skeleton->boneCount;
+
+                CheckGlobalBoneMatricies();
+                rlSetUniformMatrices(groupPtr->material.shader.locs[SHADER_LOC_BONE_MATRICES], DefaultBoneMatricies, count);
             }
         }
 
