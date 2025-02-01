@@ -30,24 +30,30 @@ Use this as a starting point or replace it with your code.
 
 Camera3D ViewCam = { 0 };
 
-rlmModel newModel = { 0 };
+rlmModel masterRobotModel = { 0 };
 
-Model raylibModel = { 0 };
+rlmModel coloredRobots[5];
 
-rlmModelAnimationPose pose = { 0 };
-rlmModelAniamtionSequence* sequences = NULL;
+rlmModelAnimationSet animSet;
 
-rlmBoneInfo* blendBone = NULL;
+rlmAnimatedModelInstance modelInstance[5];
 
-float accumumulator = 0;
+void SetupClones()
+{
+    coloredRobots[0] = rlmCloneModel(masterRobotModel);
+    coloredRobots[0].groups[1].material.baseChannel.color = DARKBLUE;
 
-int currentSequence = 10;
+    coloredRobots[1] = rlmCloneModel(masterRobotModel);
+    coloredRobots[1].groups[1].material.baseChannel.color = RED;
 
-int topSequence = 5;
+    coloredRobots[2] = rlmCloneModel(masterRobotModel);
 
-int currentFrame = 0;
-int currentTopFrame = 0;
-rlmModelAnimationPose topPose = { 0 };
+    coloredRobots[3] = rlmCloneModel(masterRobotModel);
+    coloredRobots[3].groups[1].material.baseChannel.color = PURPLE;
+
+    coloredRobots[4] = rlmCloneModel(masterRobotModel);
+    coloredRobots[4].groups[1].material.baseChannel.color = DARKGREEN;
+}
 
 void GameInit()
 {
@@ -57,37 +63,49 @@ void GameInit()
 
     ViewCam.fovy = 45;
     ViewCam.position.z = -10;
-    ViewCam.position.y = 2;
-    ViewCam.target.y = 1;
+    ViewCam.position.y = 4;
+    ViewCam.target.y = 2;
     ViewCam.up.y = 1;
 
-    raylibModel = LoadModel("resources/robot.glb");
+    Model raylibModel = LoadModel("resources/robot.glb");
   
     Shader shader = LoadShader("resources/skinning.vs", "resources/skinning.fs");
    
-    newModel = rlmLoadFromModel(raylibModel);
+    masterRobotModel = rlmLoadFromModel(raylibModel);
 
-    for (int i = 0; i < newModel.groupCount; i++)
-        rlmSetMaterialDefShader(&newModel.groups[i].material, shader);
+    for (int i = 0; i < masterRobotModel.groupCount; i++)
+        rlmSetMaterialDefShader(&masterRobotModel.groups[i].material, shader);
 
-    if (newModel.skeleton)
+    if (masterRobotModel.skeleton)
     {
-        int animationCount = 0;
-        ModelAnimation* animations = LoadModelAnimations("resources/robot.glb", &animationCount);
-        sequences = rlmLoadModelAnimations(newModel.skeleton, animations, animationCount);
-        pose = rlmLoadPoseFromModel(newModel);
-        topPose = rlmLoadPoseFromModel(newModel);
+        ModelAnimation* animations = LoadModelAnimations("resources/robot.glb", &animSet.sequenceCount);
+        animSet.sequences = rlmLoadModelAnimations(masterRobotModel.skeleton, animations, animSet.sequenceCount);
+    }
 
-        rlmSetPoseToKeyframe(newModel, &pose, sequences[currentSequence].keyframes[0]);
-        rlmSetPoseToKeyframe(newModel, &topPose, sequences[topSequence].keyframes[0]);
+    SetupClones();
 
-        blendBone = rlmFindBoneByName(newModel, "Abdomen");
+    for (int i = 0; i < 5; i++)
+    {
+        modelInstance[i].model = &coloredRobots[i];
+        modelInstance[i].transform = rlmPQSTranslation(-6.75f + (i * 3.5f), 0,0);
+        modelInstance[i].transform.rotation = QuaternionFromAxisAngle(Vector3UnitY, 180 * DEG2RAD);
+
+        if (masterRobotModel.skeleton)
+        {
+            modelInstance[i].sequences = &animSet;
+
+            modelInstance[i].interpolate = true;
+
+            modelInstance[i].currentPose = rlmLoadPoseFromModel(masterRobotModel);
+
+            rlmSetAnimationInstanceSequence(&modelInstance[i], i);
+        }
     }
 }
 
 void GameCleanup()
 {
-    rlmUnloadModel(&newModel);
+    rlmUnloadModel(&masterRobotModel);
     CloseWindow();
 }
 
@@ -96,39 +114,36 @@ bool GameUpdate()
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
         UpdateCamera(&ViewCam, CAMERA_THIRD_PERSON);
 
-    accumumulator += GetFrameTime();
+    for (int i = 0; i < 5; i++)
+        rlmAdvanceAnimationInstance(&modelInstance[i], GetFrameTime());
 
-    float invFPS = 1.0f / sequences[0].fps;
-
-    //invFPS *= 4;
-
-    while (accumumulator >= invFPS)
+    if (masterRobotModel.skeleton)
     {
-        accumumulator -= invFPS;
+        if (IsKeyPressed(KEY_LEFT))
+        {
+            modelInstance[2].currentSequence--;
+            if (modelInstance[2].currentSequence < 0)
+                modelInstance[2].currentSequence = modelInstance[2].sequences->sequenceCount;
 
-        currentFrame++;
-        if (currentFrame >= sequences[currentSequence].keyframeCount)
-            currentFrame = 0;
+            rlmSetAnimationInstanceSequence(&modelInstance[2], modelInstance[2].currentSequence);
+        }
 
-        currentTopFrame++;
-        if (currentTopFrame >= sequences[topSequence].keyframeCount)
-            currentTopFrame = 0;
+        if (IsKeyPressed(KEY_RIGHT))
+        {
+            modelInstance[2].currentSequence++;
+            if (modelInstance[2].currentSequence >= modelInstance[2].sequences->sequenceCount)
+                modelInstance[2].currentSequence = 0;
+
+            rlmSetAnimationInstanceSequence(&modelInstance[2], modelInstance[2].currentSequence);
+        }
+
+        if (IsKeyPressed(KEY_SPACE))
+        {
+            for (int i = 0; i < 5; i++)
+                modelInstance[i].interpolate = !modelInstance[i].interpolate;
+        }
     }
-
-    int nextFrame = currentFrame+1;
-    if (nextFrame >= sequences[currentSequence].keyframeCount)
-        nextFrame = 0;
-
-    rlmSetPoseToKeyframesLerp(newModel, &pose, sequences[currentSequence].keyframes[currentFrame], sequences[currentSequence].keyframes[currentFrame], accumumulator/invFPS);
-    
-    nextFrame = currentTopFrame + 1;
-    if (nextFrame >= sequences[topSequence].keyframeCount)
-        nextFrame = 0;
-
-    
-    //rlmSetPoseToKeyframe(newModel, &pose, sequences[0].keyframes[currentFrame]);
-    rlmSetPoseToKeyframesLerpEx(newModel, &pose, sequences[topSequence].keyframes[currentTopFrame], sequences[topSequence].keyframes[nextFrame], accumumulator / invFPS, blendBone);
-
+   
     return true;
 }
 
@@ -140,7 +155,8 @@ void GameDraw()
 
   //DrawModel(raylibModel, Vector3Zeros, 1, WHITE);
 
-    rlmDrawModelWithPose(newModel, rlmPQSIdentity(), &pose);
+    for (int i = 0; i < 5; i++)
+        rlmDrawModelWithPose(*modelInstance[i].model, modelInstance[i].transform, &modelInstance[i].currentPose);
 
     DrawGrid(100, 1);
 

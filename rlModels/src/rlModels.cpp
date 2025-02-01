@@ -915,6 +915,50 @@ rlmBoneInfo* rlmFindBoneByName(rlmModel model, const char* boneName)
     return NULL;
 }
 
+void rlmAdvanceAnimationInstance(rlmAnimatedModelInstance* instance, float deltaTime)
+{
+    if (!instance)
+        return;
+
+    instance->currentParam += deltaTime;
+
+    float fpsDelta = 1.0f/instance->sequences->sequences[instance->currentSequence].fps;
+
+    while (instance->currentParam >= fpsDelta)
+    {
+        instance->currentParam -= fpsDelta;
+        instance->currentFrame++;
+        if (instance->currentFrame >= instance->sequences->sequences[instance->currentSequence].keyframeCount)
+            instance->currentFrame = 0;
+
+        if (!instance->interpolate)
+            rlmSetPoseToKeyframe(*instance->model, &instance->currentPose, instance->sequences->sequences[instance->currentSequence].keyframes[instance->currentFrame]);
+    }
+
+    if (instance->interpolate)
+    {
+        int nextFrame = instance->currentFrame + 1;
+        if (nextFrame >= instance->sequences->sequences[instance->currentSequence].keyframeCount)
+            nextFrame = 0;
+
+        rlmSetPoseToKeyframesLerp(*instance->model,
+            &instance->currentPose, 
+            instance->sequences->sequences[instance->currentSequence].keyframes[instance->currentFrame],
+            instance->sequences->sequences[instance->currentSequence].keyframes[nextFrame],
+            instance->currentParam);
+    }
+}
+
+void rlmSetAnimationInstanceSequence(rlmAnimatedModelInstance* instance, int sequence)
+{
+    if (!instance)
+        return;
+    instance->currentFrame = 0;
+    instance->currentSequence = sequence;
+    instance->currentParam = -1.0f / instance->sequences->sequences[instance->currentSequence].fps;
+
+    rlmAdvanceAnimationInstance(instance, 0);
+}
 
 rlmPQSTransorm rlmPQSIdentity()
 {

@@ -146,6 +146,8 @@ rlmModel rlmLoadFromModel(Model raylibModel)
             newMesh->name[0] = '\0';
             sprintf(newMesh->name, "imported_mesh_%d", m);
 
+            newMesh->bounds = GetMeshBoundingBox(*oldMesh);
+
             newMesh->gpuMesh.vaoId = oldMesh->vaoId;
             newMesh->gpuMesh.vboIds = oldMesh->vboId;
 

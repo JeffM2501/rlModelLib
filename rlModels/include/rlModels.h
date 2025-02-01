@@ -34,7 +34,10 @@ typedef struct rlmMesh // a mesh
 {
     char* name;
     rlmGPUMesh gpuMesh;
+    BoundingBox bounds;
+
     rlmMeshBuffers* meshBuffers; // optional after upload
+
     // TODO rlmAnimatedMeshBuffers ?
 }rlmMesh;
 
@@ -120,6 +123,12 @@ typedef struct rlmModelAniamtionSequence    // a named sequence of keyframes
     rlmAnimationKeyframe*    keyframes;
 }rlmModelAniamtionSequence;
 
+typedef struct rlmModelAnimationSet
+{
+    int sequenceCount;
+    rlmModelAniamtionSequence* sequences;
+}rlmModelAnimationSet;
+
 typedef struct rlmModel // a group of meshes, materials, and an orientation transform
 {
     int groupCount;
@@ -129,6 +138,23 @@ typedef struct rlmModel // a group of meshes, materials, and an orientation tran
     bool ownsSkeleton;
     rlmSkeleton* skeleton;
 }rlmModel;
+
+typedef struct rlmAnimatedModelInstance
+{
+    rlmModel* model;
+    rlmModelAnimationSet* sequences;
+
+    rlmModelAnimationPose currentPose;
+
+    int currentSequence;
+    int currentFrame;
+
+    bool interpolate;
+
+    float currentParam;
+
+    rlmPQSTransorm transform;
+}rlmAnimatedModelInstance;
 
 // meshes
 void rlmUploadMesh(rlmMesh* mesh, bool releaseGeoBuffers);
@@ -169,6 +195,10 @@ void rlmSetPoseToKeyframesLerp(rlmModel model, rlmModelAnimationPose* pose, rlmA
 void rlmSetPoseToKeyframesLerpEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param, rlmBoneInfo* startBone);
 
 rlmBoneInfo* rlmFindBoneByName(rlmModel model, const char* boneName);
+
+void rlmAdvanceAnimationInstance(rlmAnimatedModelInstance* instance, float deltaTime);
+void rlmSetAnimationInstanceSequence(rlmAnimatedModelInstance* instance, int sequence);
+
 
 // transform utility
 rlmPQSTransorm rlmPQSIdentity();
