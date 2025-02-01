@@ -35,6 +35,19 @@ rlmModel newModel = { 0 };
 Model raylibModel = { 0 };
 
 rlmModelAnimationPose pose = { 0 };
+rlmModelAniamtionSequence* sequences = NULL;
+
+rlmBoneInfo* blendBone = NULL;
+
+float accumumulator = 0;
+
+int currentSequence = 10;
+
+int topSequence = 5;
+
+int currentFrame = 0;
+int currentTopFrame = 0;
+rlmModelAnimationPose topPose = { 0 };
 
 void GameInit()
 {
@@ -49,17 +62,28 @@ void GameInit()
     ViewCam.up.y = 1;
 
     raylibModel = LoadModel("resources/robot.glb");
-
+  
     Shader shader = LoadShader("resources/skinning.vs", "resources/skinning.fs");
-
    
     newModel = rlmLoadFromModel(raylibModel);
 
     for (int i = 0; i < newModel.groupCount; i++)
         rlmSetMaterialDefShader(&newModel.groups[i].material, shader);
 
-    pose = rlmLoadPoseFromModel(newModel);
-  }
+    if (newModel.skeleton)
+    {
+        int animationCount = 0;
+        ModelAnimation* animations = LoadModelAnimations("resources/robot.glb", &animationCount);
+        sequences = rlmLoadModelAnimations(newModel.skeleton, animations, animationCount);
+        pose = rlmLoadPoseFromModel(newModel);
+        topPose = rlmLoadPoseFromModel(newModel);
+
+        rlmSetPoseToKeyframe(newModel, &pose, sequences[currentSequence].keyframes[0]);
+        rlmSetPoseToKeyframe(newModel, &topPose, sequences[topSequence].keyframes[0]);
+
+        blendBone = rlmFindBoneByName(newModel, "Abdomen");
+    }
+}
 
 void GameCleanup()
 {
@@ -71,6 +95,39 @@ bool GameUpdate()
 {
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
         UpdateCamera(&ViewCam, CAMERA_THIRD_PERSON);
+
+    accumumulator += GetFrameTime();
+
+    float invFPS = 1.0f / sequences[0].fps;
+
+    //invFPS *= 4;
+
+    while (accumumulator >= invFPS)
+    {
+        accumumulator -= invFPS;
+
+        currentFrame++;
+        if (currentFrame >= sequences[currentSequence].keyframeCount)
+            currentFrame = 0;
+
+        currentTopFrame++;
+        if (currentTopFrame >= sequences[topSequence].keyframeCount)
+            currentTopFrame = 0;
+    }
+
+    int nextFrame = currentFrame+1;
+    if (nextFrame >= sequences[currentSequence].keyframeCount)
+        nextFrame = 0;
+
+    rlmSetPoseToKeyframesLerp(newModel, &pose, sequences[currentSequence].keyframes[currentFrame], sequences[currentSequence].keyframes[currentFrame], accumumulator/invFPS);
+    
+    nextFrame = currentTopFrame + 1;
+    if (nextFrame >= sequences[topSequence].keyframeCount)
+        nextFrame = 0;
+
+    
+    //rlmSetPoseToKeyframe(newModel, &pose, sequences[0].keyframes[currentFrame]);
+    rlmSetPoseToKeyframesLerpEx(newModel, &pose, sequences[topSequence].keyframes[currentTopFrame], sequences[topSequence].keyframes[nextFrame], accumumulator / invFPS, blendBone);
 
     return true;
 }
