@@ -1,6 +1,9 @@
 # rlModelLib
 A drop in libary for raylib that implements more advanced and robust 3d model and animation support.
 
+# Heavy WORK IN PROGRESS
+Use/evaluate at your own risk
+
 # Problems With Raylib model
 * Meshes alway store geometry data
 * Meshes duplicate pose matrix
