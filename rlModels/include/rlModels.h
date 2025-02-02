@@ -54,6 +54,12 @@ typedef struct rlmMaterialChannel // a texture map in a material
     bool ownsTexture;
 }rlmMaterialChannel;
 
+typedef struct rlmMaterialValueF
+{
+    int shaderLoc;
+    float value;
+}rlmMaterialValueF;
+
 typedef struct rlmMaterialDef // a shader and it's input texture
 {
     char* name; 
@@ -64,6 +70,9 @@ typedef struct rlmMaterialDef // a shader and it's input texture
 
     int materialChannels;
     rlmMaterialChannel* extraChannels;
+
+    int materialValues;
+    rlmMaterialValueF* values;
 }rlmMaterialDef; 
 
 typedef struct rlmModelGroup // a group of meshes that share a material
@@ -166,6 +175,9 @@ void rlmUnloadMaterial(rlmMaterialDef* material);
 
 void rlmAddMaterialChannel(rlmMaterialDef* material, Texture2D texture, int shaderLoc, int slot, bool isCubeMap);
 void rlmAddMaterialChannels(rlmMaterialDef* material, int count, Texture2D* textures, int* locs);
+
+int rlmAddMaterialValue(rlmMaterialDef* material, int shaderLoc, float value);
+void rlmSetMaterialValue(rlmMaterialDef* material, int valueIndex, float value);
 
 void rlmSetMaterialDefShader(rlmMaterialDef* material, Shader shader);
 

@@ -308,6 +308,12 @@ void rlmUnloadMaterial(rlmMaterialDef* material)
             rlUnloadTexture(material->extraChannels[i].textureId);
         material->extraChannels[i].textureId = 0;
     }
+
+    if (material->values)
+        MemFree(material->values);
+
+    material->values = NULL;
+    material->materialValues = 0;
 }
 
 void rlmAddMaterialChannel(rlmMaterialDef* material, Texture2D texture, int shaderLoc, int slot, bool isCubeMap)
@@ -376,6 +382,38 @@ void rlmAddMaterialChannels(rlmMaterialDef* material, int count, Texture2D* text
     }
 }
 
+int rlmAddMaterialValue(rlmMaterialDef* material, int shaderLoc, float value)
+{
+    if (!material)
+        return -1;
+
+    int index = 0;
+    if (!material->values || material->materialValues == 0)
+    {
+        material->values = (rlmMaterialValueF*)MemAlloc(sizeof(rlmMaterialValueF));
+        material->materialValues = 1;
+    }
+    else
+    {
+        index = material->materialValues;
+        material->materialValues++;
+        material->values = (rlmMaterialValueF*)MemRealloc(material->values, sizeof(rlmMaterialValueF) * material->materialValues);
+    }
+
+    material->values[index].shaderLoc = shaderLoc;
+    material->values[index].value = value;
+
+    return index;
+}
+
+void rlmSetMaterialValue(rlmMaterialDef* material, int valueIndex, float value)
+{
+    if (!material || valueIndex >= material->materialValues)
+        return;
+
+    material->values[valueIndex].value = value;
+}
+
 void rlmSetMaterialDefShader(rlmMaterialDef* material, Shader shader)
 {
     if (!material)
@@ -419,6 +457,19 @@ void rlmCloneMaterial(const rlmMaterialDef* oldMaterial, rlmMaterialDef* newMate
         {
             newMaterial->extraChannels[i] = oldMaterial->extraChannels[i];
             newMaterial->extraChannels[i].ownsTexture = false;
+        }
+    }
+
+    newMaterial->materialValues = oldMaterial->materialValues;
+
+    if (newMaterial->materialValues > 0 && oldMaterial->materialValues)
+    {
+        newMaterial->values = (rlmMaterialValueF*)MemAlloc(sizeof(rlmMaterialValueF) * newMaterial->materialValues);
+
+        for (int i = 0; i < newMaterial->materialValues; i++)
+        {
+            newMaterial->values[i].shaderLoc = oldMaterial->values[i].shaderLoc;
+            newMaterial->values[i].value = oldMaterial->values[i].value;
         }
     }
 }
@@ -537,7 +588,7 @@ void rlmApplyMaterialChannel(rlmMaterialChannel* channel, Shader *shader,int ind
                (float)channel->color.a / 255.0f
         };
         rlSetUniform(locToUse, values, SHADER_UNIFORM_VEC4, 1);
-    }
+    }   
 }
 
 void rlmApplyMaterialDef(rlmMaterialDef* material)
@@ -553,6 +604,9 @@ void rlmApplyMaterialDef(rlmMaterialDef* material)
 
     for (index = 1; index < material->materialChannels+1; index++)
         rlmApplyMaterialChannel(&material->extraChannels[index - 1], &material->shader);
+
+    for (int i = 0; i < material->materialValues; i++)
+        SetShaderValue(material->shader, material->values[i].shaderLoc, &material->values[i].value, SHADER_UNIFORM_FLOAT);
 }
 
 Matrix rlmPQSToMatrix(const rlmPQSTransorm* transform)
