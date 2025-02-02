@@ -97,7 +97,16 @@ typedef struct rlmBoneInfo  // a node in the bone tree
 typedef struct rlmAnimationKeyframe // a list of bone transforms for a skeleton
 {
     rlmPQSTransorm* boneTransforms;
+    bool isRelative;
 }rlmAnimationKeyframe;
+
+typedef struct rlmAnimationKeyframe // a list of bone transforms for a skeleton
+{
+    rlmPQSTransorm* boneTransforms;
+}rlmAnimationKeyframe;
+
+
+typedef rlmAnimationKeyframe rlmRelativeAnimationKeyframe;
 
 typedef struct rlmSkeleton // a tree of bones, and the keyframe for it's binding pose
 {
@@ -114,6 +123,7 @@ typedef struct rlmModelAnimationPose    // a list of model space matricides bake
     Matrix* boneMatricies;
 }rlmModelAnimationPose;
 
+
 typedef struct rlmModelAniamtionSequence    // a named sequence of keyframes
 {
     char name[64];
@@ -123,11 +133,16 @@ typedef struct rlmModelAniamtionSequence    // a named sequence of keyframes
     rlmAnimationKeyframe*    keyframes;
 }rlmModelAniamtionSequence;
 
+typedef rlmModelAniamtionSequence rlmModelRelativeAniamtionSequence;
+
 typedef struct rlmModelAnimationSet
 {
     int sequenceCount;
     rlmModelAniamtionSequence* sequences;
 }rlmModelAnimationSet;
+
+typedef rlmModelAnimationSet rlmModelRelativeAnimationSet;
+
 
 typedef struct rlmModel // a group of meshes, materials, and an orientation transform
 {
@@ -189,23 +204,30 @@ rlmModelAnimationPose rlmLoadPoseFromModel(rlmModel model);
 void rlmUnloadPose(rlmModelAnimationPose* pose);
 
 void rlmSetPoseToKeyframe(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame);
-void rlmSetPoseToKeyframeEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame, rlmBoneInfo * startBone);
-
 void rlmSetPoseToKeyframesLerp(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param);
-void rlmSetPoseToKeyframesLerpEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param, rlmBoneInfo* startBone);
+
 
 rlmBoneInfo* rlmFindBoneByName(rlmModel model, const char* boneName);
 
 void rlmAdvanceAnimationInstance(rlmAnimatedModelInstance* instance, float deltaTime);
 void rlmSetAnimationInstanceSequence(rlmAnimatedModelInstance* instance, int sequence);
 
+void rlmMakeRelativeKeyFrame(rlmAnimationKeyframe globalKeyframe, rlmRelativeAnimationKeyframe* relativeKeyframe);
+void rlmMakeRelativeAnimationSequence(rlmModelAniamtionSequence globalSequence, rlmModelRelativeAniamtionSequence* relativeSequence);
+void rlmMakeRelativeAnimationSet(rlmModelAnimationSet globalSet, rlmModelRelativeAnimationSet* relativeSet);
+
+void rlmSetPoseToBlendedKeyframes(rlmModel model, rlmModelAnimationPose* pose, rlmRelativeAnimationKeyframe frame1, rlmRelativeAnimationKeyframe frame2, rlmBoneInfo* startBone);
+void rlmSetPoseToBlendedKeyframesLerp(rlmModel model, rlmModelAnimationPose* pose, rlmRelativeAnimationKeyframe frame1, rlmRelativeAnimationKeyframe frame2, rlmBoneInfo* startBone);
+
 
 // transform utility
 rlmPQSTransorm rlmPQSIdentity();
 rlmPQSTransorm rlmPQSTranslation(float x, float y, float z);
 
-rlmPQSTransorm rlmPQSTransformAdd(rlmPQSTransorm lhs, rlmPQSTransorm rhs);
+rlmPQSTransorm rlmPQSTransformApply(rlmPQSTransorm lhs, rlmPQSTransorm rhs);
 rlmPQSTransorm rlmPQSTransformSubtract(rlmPQSTransorm lhs, rlmPQSTransorm rhs);
+rlmPQSTransorm rlmPQSTransformInvert(rlmPQSTransorm lhs);
+
 
 rlmPQSTransorm rlmPQSLerp(const rlmPQSTransorm *lhs, const rlmPQSTransorm* rhs, float param);
 

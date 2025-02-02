@@ -189,6 +189,8 @@ rlmModelAniamtionSequence* rlmLoadModelAnimations(rlmSkeleton* skeleton, ModelAn
 {
     rlmModelAniamtionSequence* sequences = (rlmModelAniamtionSequence*)MemAlloc(sizeof(rlmModelAniamtionSequence) * animationCount);
 
+    static rlmPQSTransorm globalTransformCache[256];
+
     for (int i = 0; i < animationCount; i++)
     {
         memcpy(sequences[i].name, animations[i].name, 32);
@@ -202,12 +204,30 @@ rlmModelAniamtionSequence* rlmLoadModelAnimations(rlmSkeleton* skeleton, ModelAn
 
             for (int b = 0; b < skeleton->boneCount; b++)
             {
-                sequences[i].keyframes[f].boneTransforms[b].position = animations[i].framePoses[f][b].translation;
-                sequences[i].keyframes[f].boneTransforms[b].rotation = animations[i].framePoses[f][b].rotation;
-                sequences[i].keyframes[f].boneTransforms[b].scale = animations[i].framePoses[f][b].scale;
+                globalTransformCache[b].position = animations[i].framePoses[f][b].translation;
+                globalTransformCache[b].rotation = animations[i].framePoses[f][b].rotation;
+                globalTransformCache[b].scale = animations[i].framePoses[f][b].scale;
             }
 
             MemFree(animations[i].framePoses[f]);
+
+            for (int b = 0; b < skeleton->boneCount; b++)
+            {
+                rlmPQSTransorm localBone = globalTransformCache[b];
+
+                if (skeleton->bones[b].parentId >= 0)
+                {
+                    rlmPQSTransorm* parentBone = &globalTransformCache[skeleton->bones[b].parentId];
+
+                    localBone.position = Vector3RotateByQuaternion(Vector3Subtract(globalTransformCache[b].position, parentBone->position), QuaternionInvert(parentBone->rotation));
+                    localBone.rotation = QuaternionMultiply(QuaternionInvert(parentBone->rotation), globalTransformCache[b].rotation);
+                    localBone.scale = Vector3Divide(globalTransformCache[b].scale, parentBone->scale);
+                }
+
+                sequences[i].keyframes[f].boneTransforms[b].position = localBone.position;
+                sequences[i].keyframes[f].boneTransforms[b].rotation = localBone.rotation;
+                sequences[i].keyframes[f].boneTransforms[b].scale = localBone.scale;
+            }
         }
         MemFree(animations[i].framePoses);
     }

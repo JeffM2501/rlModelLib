@@ -94,7 +94,7 @@ void GameInit()
         {
             modelInstance[i].sequences = &animSet;
 
-            modelInstance[i].interpolate = false;
+            modelInstance[i].interpolate = true;
 
             modelInstance[i].currentPose = rlmLoadPoseFromModel(masterRobotModel);
 

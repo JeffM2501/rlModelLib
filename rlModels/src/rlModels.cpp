@@ -555,27 +555,12 @@ void rlmApplyMaterialDef(rlmMaterialDef* material)
         rlmApplyMaterialChannel(&material->extraChannels[index - 1], &material->shader);
 }
 
-Matrix rlmPQSToMatrix(const rlmPQSTransorm* transform)
+Matrix rlmPQSToMatrix(const rlmPQSTransorm* t)
 {
-    Matrix matScale = MatrixScale(transform->scale.x, transform->scale.y, transform->scale.z);
+    if (!t)
+        return MatrixIdentity();
 
-    Vector3 axis = { 0 };
-    float angle = 0;
-
-    QuaternionToAxisAngle(transform->rotation, &axis, &angle);
-    Matrix matRotation = MatrixRotate(axis, angle);
-    Matrix matTranslation = MatrixTranslate(transform->position.x, transform->position.y, transform->position.z);
-
-    return MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
-}
-
-rlmPQSTransorm rlmPQSFromMatrix(const Matrix* matrix)
-{
-    rlmPQSTransorm transform;
-
-    MatrixDecompose(*matrix, &transform.position, &transform.rotation, &transform.scale);
-   
-    return transform;
+    return MatrixMultiply(MatrixMultiply(QuaternionToMatrix(t->rotation), MatrixTranslate(t->position.x, t->position.y, t->position.z)), MatrixScale(t->scale.x, t->scale.y, t->scale.z));
 }
 
 void rlmDrawMesh(rlmGPUMesh* mesh, Shader* shader)
@@ -866,10 +851,7 @@ void rlmUnloadPose(rlmModelAnimationPose* pose)
 
 void rlmSetPoseToKeyframe(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame)
 {
-    if (!model.skeleton)
-        return;
-
-    rlmSetBonePoseRecursive(model.skeleton->rootBone, &model.skeleton->bindingFrame, &frame, pose);
+    rlmSetPoseToKeyframeEx(model, pose, frame, NULL);
 }
 
 void rlmSetPoseToKeyframeEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame, rlmBoneInfo* startBone)
@@ -880,7 +862,26 @@ void rlmSetPoseToKeyframeEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnim
     if (startBone == nullptr)
         startBone = model.skeleton->rootBone;
 
-    rlmSetBonePoseRecursive(startBone, &model.skeleton->bindingFrame, &frame, pose);
+    static rlmPQSTransorm gloabKeyframeCache[MAX_BONE_NUM];
+
+    rlmAnimationKeyframe globalKeyFrame;
+    globalKeyFrame.boneTransforms = gloabKeyframeCache;
+
+    for (int i = 0; i < model.skeleton->boneCount; i++)
+    {
+        globalKeyFrame.boneTransforms[i] = frame.boneTransforms[i];
+        if (model.skeleton->bones[i].parentId >= 0)
+        {
+            rlmPQSTransorm* parentGlobalTransform = &globalKeyFrame.boneTransforms[model.skeleton->bones[i].parentId];
+
+            globalKeyFrame.boneTransforms[i].position = Vector3Add(parentGlobalTransform->position, Vector3RotateByQuaternion(frame.boneTransforms[i].position, parentGlobalTransform->rotation));
+            globalKeyFrame.boneTransforms[i].rotation = QuaternionMultiply(parentGlobalTransform->rotation, frame.boneTransforms[i].rotation);
+            globalKeyFrame.boneTransforms[i].scale = Vector3Multiply(parentGlobalTransform->scale, frame.boneTransforms[i].scale);
+        }
+    }
+
+
+    rlmSetBonePoseRecursive(startBone, &model.skeleton->bindingFrame, &globalKeyFrame, pose);
 }
 
 void rlmSetPoseToKeyframesLerp(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param)
@@ -980,14 +981,37 @@ rlmPQSTransorm rlmPQSTranslation(float x, float y, float z)
     return transform;
 }
 
-rlmPQSTransorm rlmPQSTransformAdd(rlmPQSTransorm lhs, rlmPQSTransorm rhs)
+rlmPQSTransorm rlmPQSTransformApply(rlmPQSTransorm lhs, rlmPQSTransorm rhs)
 {
-    return rlmPQSFromMatrix(&MatrixAdd(rlmPQSToMatrix(&lhs), rlmPQSToMatrix(&rhs)));
+    rlmPQSTransorm result;
+
+    result.position = Vector3Add(lhs.position, rhs.position);
+    result.rotation = QuaternionMultiply(lhs.rotation, rhs.rotation);
+    result.scale = Vector3Multiply(lhs.scale, rhs.scale);
+
+    return result;
 }
 
 rlmPQSTransorm rlmPQSTransformSubtract(rlmPQSTransorm lhs, rlmPQSTransorm rhs)
 {
-    return rlmPQSFromMatrix(&MatrixSubtract(rlmPQSToMatrix(&lhs), rlmPQSToMatrix(&rhs)));
+    rlmPQSTransorm result;
+
+    result.position = Vector3Subtract(lhs.position, rhs.position);
+    result.rotation = QuaternionMultiply(rhs.rotation, QuaternionInvert(lhs.rotation));
+    result.scale = Vector3Divide(lhs.scale, rhs.scale);
+
+    return result;
+}
+
+rlmPQSTransorm rlmPQSTransformInvert(rlmPQSTransorm lhs)
+{
+    rlmPQSTransorm result;
+
+    result.position = Vector3RotateByQuaternion(Vector3Negate(lhs.position), QuaternionInvert(lhs.rotation));
+    result.rotation = QuaternionInvert(lhs.rotation);
+    result.scale = Vector3Divide(Vector3{ 1.0f, 1.0f, 1.0f }, lhs.scale);
+
+    return result;
 }
 
 rlmPQSTransorm rlmPQSLerp(const rlmPQSTransorm* lhs, const rlmPQSTransorm* rhs, float param)
