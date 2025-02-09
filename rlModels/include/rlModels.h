@@ -8,6 +8,13 @@
 extern "C" {            // Prevents name mangling of functions
 #endif
 
+    typedef struct rlmPQSTransorm // a transform with a position, quaternion rotation, scale
+    {
+        Vector3 position;
+        Quaternion rotation;
+        Vector3 scale;
+    }rlmPQSTransorm;
+
     typedef struct rlmGPUMesh	// minimum data needed to draw a mesh on the GPU
     {
         unsigned int vaoId;
@@ -41,6 +48,8 @@ extern "C" {            // Prevents name mangling of functions
         BoundingBox bounds;
 
         rlmMeshBuffers* meshBuffers; // optional after upload
+
+        rlmPQSTransorm transform;
 
         // TODO rlmAnimatedMeshBuffers ?
     }rlmMesh;
@@ -88,13 +97,6 @@ extern "C" {            // Prevents name mangling of functions
         rlmMesh* meshes;
         bool* meshDisableFlags;
     }rlmModelGroup;
-
-    typedef struct rlmPQSTransorm // a transform with a position, quaternion rotation, scale
-    {
-        Vector3 position;
-        Quaternion rotation;
-        Vector3 scale;
-    }rlmPQSTransorm;
 
     typedef struct rlmBoneInfo  // a node in the bone tree
     {
