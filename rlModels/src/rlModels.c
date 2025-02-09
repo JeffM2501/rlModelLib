@@ -785,6 +785,11 @@ void rlmDrawModel(rlmModel model, rlmPQSTransorm transform)
 
 void rlmDrawModelWithPose(rlmModel model, rlmPQSTransorm transform, rlmModelAnimationPose* pose)
 {
+    rlmDrawModelWithPoseEx(model, transform, pose, NULL);
+}
+
+void rlmDrawModelWithPoseEx(rlmModel model, rlmPQSTransorm transform, rlmModelAnimationPose* pose, Shader* shader)
+{
     Matrix transformMatrix = rlmPQSToMatrix(&transform);
     Matrix modelMatrix = MatrixMultiply(rlmPQSToMatrix(&model.orientationTransform), transformMatrix);
 
@@ -795,15 +800,23 @@ void rlmDrawModelWithPose(rlmModel model, rlmPQSTransorm transform, rlmModelAnim
     {
         rlmModelGroup* groupPtr = model.groups + group;
 
-        rlmApplyMaterialDef(&groupPtr->material);
+        Shader* shaderToUse = &groupPtr->material.shader;
+        if (shader)
+        {
+            shaderToUse = shader; // shader override, assume it is already setup
+        }
+        else
+        {
+            rlmApplyMaterialDef(&groupPtr->material);
+        }
 
         // if the shader wants bones, set some bone matricies
-        if (groupPtr->material.shader.locs[SHADER_LOC_BONE_MATRICES] >= 0)
+        if (shaderToUse->locs[SHADER_LOC_BONE_MATRICES] >= 0)
         {
             // if we have a real pose, use it
             if (model.skeleton && pose)
             {
-                rlSetUniformMatrices(groupPtr->material.shader.locs[SHADER_LOC_BONE_MATRICES], pose->boneMatricies, model.skeleton->boneCount);
+                rlSetUniformMatrices(shaderToUse->locs[SHADER_LOC_BONE_MATRICES], pose->boneMatricies, model.skeleton->boneCount);
             }
             else // otherwise just fill out a list of default bones.
             {
@@ -812,7 +825,7 @@ void rlmDrawModelWithPose(rlmModel model, rlmPQSTransorm transform, rlmModelAnim
                     count = model.skeleton->boneCount;
 
                 CheckGlobalBoneMatricies();
-                rlSetUniformMatrices(groupPtr->material.shader.locs[SHADER_LOC_BONE_MATRICES], DefaultBoneMatricies, count);
+                rlSetUniformMatrices(shaderToUse->locs[SHADER_LOC_BONE_MATRICES], DefaultBoneMatricies, count);
             }
         }
 
@@ -828,22 +841,22 @@ void rlmDrawModelWithPose(rlmModel model, rlmPQSTransorm transform, rlmModelAnim
         Matrix matModelViewProjection = MatrixMultiply(matModelView, matProjection);
 
         // Upload view and projection matrices (if locations available)
-        if (groupPtr->material.shader.locs[SHADER_LOC_MATRIX_VIEW] != -1)
-            rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_VIEW], matView);
+        if (shaderToUse->locs[SHADER_LOC_MATRIX_VIEW] != -1)
+            rlSetUniformMatrix(shaderToUse->locs[SHADER_LOC_MATRIX_VIEW], matView);
 
-        if (groupPtr->material.shader.locs[SHADER_LOC_MATRIX_PROJECTION] != -1)
-            rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_PROJECTION], matProjection);
+        if (shaderToUse->locs[SHADER_LOC_MATRIX_PROJECTION] != -1)
+            rlSetUniformMatrix(shaderToUse->locs[SHADER_LOC_MATRIX_PROJECTION], matProjection);
 
         // Model transformation matrix is sent to shader uniform location: SHADER_LOC_MATRIX_MODEL
-        if (groupPtr->material.shader.locs[SHADER_LOC_MATRIX_MODEL] != -1)
-            rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_MODEL], matModel);
+        if (shaderToUse->locs[SHADER_LOC_MATRIX_MODEL] != -1)
+            rlSetUniformMatrix(shaderToUse->locs[SHADER_LOC_MATRIX_MODEL], matModel);
 
         // Upload model normal matrix (if locations available)
-        if (groupPtr->material.shader.locs[SHADER_LOC_MATRIX_NORMAL] != -1)
-            rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_NORMAL], MatrixTranspose(MatrixInvert(matModel)));
+        if (shaderToUse->locs[SHADER_LOC_MATRIX_NORMAL] != -1)
+            rlSetUniformMatrix(shaderToUse->locs[SHADER_LOC_MATRIX_NORMAL], MatrixTranspose(MatrixInvert(matModel)));
 
         // Send combined model-view-projection matrix to shader
-        rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_MVP], matModelViewProjection);
+        rlSetUniformMatrix(shaderToUse->locs[SHADER_LOC_MATRIX_MVP], matModelViewProjection);
 
         // draw the meshes
         for (int i = 0; i < groupPtr->meshCount; i++)
