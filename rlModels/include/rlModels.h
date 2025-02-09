@@ -202,6 +202,9 @@ extern "C" {            // Prevents name mangling of functions
 
     void rlmDrawModelWithPose(rlmModel model, rlmPQSTransorm transform, rlmModelAnimationPose* pose);
 
+    void rlmDrawModelWithPoseEx(rlmModel model, rlmPQSTransorm transform, rlmModelAnimationPose* pose, Shader* shader);
+
+
     // animations
     rlmModelAnimationPose rlmLoadPoseFromModel(rlmModel model);
     void rlmUnloadPose(rlmModelAnimationPose* pose);
