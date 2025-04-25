@@ -45,12 +45,15 @@ void GameInit()
     SetTargetFPS(144);
 
     ViewCam.fovy = 45;
-    ViewCam.position.z = -10;
-    ViewCam.position.y = 4;
-    ViewCam.target.y = 2;
+    ViewCam.position.z = -300;
+    ViewCam.position.y = 80;
+    ViewCam.target.y = 80;
     ViewCam.up.y = 1;
 
-    Model raylibModel = LoadModel("resources/robot.glb");
+    rlSetClipPlanes(1, 5000);
+    rlSetLineWidth(4);
+
+    Model raylibModel = LoadModel("resources/bot.glb");
   
     Shader shader = LoadShader("resources/skinning.vs", "resources/skinning.fs");
    
@@ -61,7 +64,7 @@ void GameInit()
 
     if (masterRobotModel.skeleton)
     {
-        ModelAnimation* animations = LoadModelAnimations("resources/robot.glb", &animSet.sequenceCount);
+        ModelAnimation* animations = LoadModelAnimations("resources/bot.aim.glb", &animSet.sequenceCount);
         animSet.sequences = rlmLoadModelAnimations(masterRobotModel.skeleton, animations, animSet.sequenceCount);
     }
 
@@ -87,7 +90,7 @@ bool GameUpdate()
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
         UpdateCamera(&ViewCam, CAMERA_THIRD_PERSON);
 
-   // rlmAdvanceAnimationInstance(&animInstance, GetFrameTime());
+    rlmAdvanceAnimationInstance(&animInstance, GetFrameTime());
 
     if (masterRobotModel.skeleton)
     {
@@ -141,14 +144,14 @@ void GameDraw()
     rlDisableDepthMask();
     rlDisableDepthTest();
 
-   // DrawBone(animInstance.model->skeleton->rootBone, animInstance.transform, animInstance.sequences->sequences[animInstance.currentSequence].keyframes[animInstance.currentFrame]);
+    DrawBone(animInstance.model->skeleton->rootBone, animInstance.transform, animInstance.sequences->sequences[animInstance.currentSequence].keyframes[animInstance.currentFrame]);
   //  DrawRelativeBone(animInstance.model->skeleton->rootBone, animInstance.transform, relativeKeyframe);
 
     rlDrawRenderBatchActive();
     rlEnableDepthTest();
     rlEnableDepthMask();
 
-    DrawGrid(100, 1);
+    DrawGrid(100, 10);
 
     EndMode3D();
 

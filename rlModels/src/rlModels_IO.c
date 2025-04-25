@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "external/cgltf.h"
+
 rlmModel rlmLoadFromModel(Model raylibModel)
 {
     rlmModel newModel = { 0 };
@@ -216,4 +218,37 @@ rlmModelAniamtionSequence* rlmLoadModelAnimations(rlmSkeleton* skeleton, ModelAn
     MemFree(animations);
 
     return sequences;
+}
+
+
+
+// Load file data callback for cgltf
+static cgltf_result LoadFileGLTFCallback(const struct cgltf_memory_options* memoryOptions, const struct cgltf_file_options* fileOptions, const char* path, cgltf_size* size, void** data)
+{
+    int filesize;
+    unsigned char* filedata = LoadFileData(path, &filesize);
+
+    if (filedata == NULL) return cgltf_result_io_error;
+
+    *size = filesize;
+    *data = filedata;
+
+    return cgltf_result_success;
+}
+
+// Release file data callback for cgltf
+static void ReleaseFileGLTFCallback(const struct cgltf_memory_options* memoryOptions, const struct cgltf_file_options* fileOptions, void* data)
+{
+    UnloadFileData(data);
+}
+
+
+rlmModel rlmLoadFromGLTF(const char* filename);
+{
+    // glTF data loading
+    cgltf_options options = { 0 };
+    options.file.read = LoadFileGLTFCallback;
+    options.file.release = ReleaseFileGLTFCallback;
+    cgltf_data* data = NULL;
+    cgltf_result result = cgltf_parse(&options, fileData, dataSize, &data);
 }

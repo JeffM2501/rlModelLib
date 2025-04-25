@@ -204,7 +204,6 @@ extern "C" {            // Prevents name mangling of functions
 
     void rlmDrawModelWithPoseEx(rlmModel model, rlmPQSTransorm transform, rlmModelAnimationPose* pose, Shader* shader);
 
-
     // animations
     rlmModelAnimationPose rlmLoadPoseFromModel(rlmModel model);
     void rlmUnloadPose(rlmModelAnimationPose* pose);
@@ -219,7 +218,6 @@ extern "C" {            // Prevents name mangling of functions
 
     void rlmAdvanceAnimationInstance(rlmAnimatedModelInstance* instance, float deltaTime);
     void rlmSetAnimationInstanceSequence(rlmAnimatedModelInstance* instance, int sequence);
-
 
     // transform utility
     rlmPQSTransorm rlmPQSIdentity();
