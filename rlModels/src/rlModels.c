@@ -773,6 +773,17 @@ void rlmDrawModel(rlmModel model, rlmPQSTransorm transform)
 
             // Send combined model-view-projection matrix to shader
             rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_MVP], matModelViewProjection);
+
+            // if the shader wants bones, set identity matricies, so it can still draw
+            if (groupPtr->material.shader.locs[SHADER_LOC_BONE_MATRICES] >= 0)
+            {
+                int count = MAX_BONE_NUM;
+                if (model.skeleton)
+                    count = model.skeleton->boneCount;
+
+                CheckGlobalBoneMatricies();
+                rlSetUniformMatrices(groupPtr->material.shader.locs[SHADER_LOC_BONE_MATRICES], DefaultBoneMatricies, count);
+            }
         
             if (groupPtr->meshDisableFlags == NULL || !groupPtr->meshDisableFlags[i])
                 rlmDrawMesh(&groupPtr->meshes[i].gpuMesh, &groupPtr->material.shader);
@@ -874,7 +885,7 @@ Matrix rlmGetBoneMatrix(const rlmPQSTransorm * bindingTransform, const rlmPQSTra
 {
     Vector3 invTranslation = Vector3RotateByQuaternion(Vector3Negate(bindingTransform->position), QuaternionInvert(bindingTransform->rotation));
     Quaternion invRotation = QuaternionInvert(bindingTransform->rotation);
-    Vector3 invScale = Vector3Divide((Vector3){0,0,0}, bindingTransform->scale);
+    Vector3 invScale = Vector3Divide((Vector3){1,1,1}, bindingTransform->scale);
 
     Vector3 boneTranslation = Vector3Add(Vector3RotateByQuaternion(Vector3Multiply(frameTransform->scale, invTranslation), frameTransform->rotation), frameTransform->position);
     Quaternion boneRotation = QuaternionMultiply(frameTransform->rotation, invRotation);
