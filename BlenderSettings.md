@@ -7,7 +7,7 @@ This document is a work in progress and is under revisison.
 # Blender Version
 Use the current version of blender when possible. Older versions of blender do not have all the required options needed to correclty export to some formats.
 
-#Animation Limitations
+# Animation Limitations
 Raylib has a relativly simple animation system that has several limitaitons.
 
 1) Bones only. Raylib can only animate bones, it can not animate mesh objects directly. If you wish to animate entire objects by transforms, you must create an armature, and attach the meshes as children of the bones in the armature. Then animate the bones, not the meshes. Raylib will attach the vertecies of the meshes to the bones and animate them.
