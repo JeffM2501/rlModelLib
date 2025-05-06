@@ -7,6 +7,15 @@ This document is a work in progress and is under revisison.
 # Blender Version
 Use the current version of blender when possible. Older versions of blender do not have all the required options needed to correclty export to some formats.
 
+#Animation Limitations
+Raylib has a relativly simple animation system that has several limitaitons.
+
+1) Bones only. Raylib can only animate bones, it can not animate mesh objects directly. If you wish to animate entire objects by transforms, you must create an armature, and attach the meshes as children of the bones in the armature. Then animate the bones, not the meshes. Raylib will attach the vertecies of the meshes to the bones and animate them.
+
+2) No Morph Targets. Raylib can not do vertex based animation, just bones, so all animations must be done via bones, morph targets will not work.
+
+4) No Animated TextureCoordiantes or UVs. Raylib can only animate bones and attached vertex data, it can not animate texture coordinates.
+
 # Using GLTF
 GLTF/GLB is a great format, but unfortonately supports more features that raylib does, so it is very easy to get files that will not import properly  into raylib. 
 To get files to work in raylib, you need to do a few specific thing when you export from blend.
