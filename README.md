@@ -4,6 +4,19 @@ A drop in libary for raylib that implements more advanced and robust 3d model an
 # Heavy WORK IN PROGRESS
 Use/evaluate at your own risk
 
+# Mesh Inspector
+Mesh inspector is a tool to help load, view and evaluate meshes using raylib, it can be a useful tool to help diagnose import problems.
+MeshInspector.exe is included in this repository.
+
+## Useage
+Camera
+	Use Alt to go into orbit camera mode
+	Right click to go into FPS camera mode
+	
+Meshes and bones
+	Select meshes and bones to view proeprties on the right side.
+
+
 # Problems With Raylib model
 * Meshes alway store geometry data
 * Meshes duplicate pose matrix
@@ -18,13 +31,15 @@ Use/evaluate at your own risk
 
 
 # Structures
-
+```
 rlmGPUMesh	// data needed to draw a mesh
 {
 	VAO
 	VBOS[]
 } // 12 bytes
+```
 
+```
 rlmMeshBuffers	// geometry buffers used to define a mesh
 {
 	Verts[]
@@ -37,20 +52,24 @@ rlmMeshBuffers	// geometry buffers used to define a mesh
 	BoneIds[]
 	Indexes[]
 }// 9*size_t bytes
+```
 
+```
 rlmMesh // a mesh
 {
 	rlmGPUMesh GPUMesh;
 	rlmMeshBuffers* MeshBuffers = nullptr; // optional adter upload
 }; //20 bytes
-
+```
+```
 rlmMaterialChannel // a texture map in a material
 {
 	int TextureId;	//4
 	bool OwnsTexture; //1
 	int ShaderLoc;	//4
 }; // 9 bytes
-
+```
+```
 rlmMaterialDef // a shader and it's input texture
 {
 	Shader shader;	// 12
@@ -62,21 +81,26 @@ rlmMaterialDef // a shader and it's input texture
 	
 	rlmMaterialChannel ExtraChannes[0];// 8
 } // 38 bytes
-
+```
+```
 rlmModelGroup // a group of meshes that share a material
 {
 	rlmMaterialDef Material;
 	int MeshCount;
 	rlmMesh Meshes[];
 }; //50 bytes
+```
 
+```
 rlmPQSTransorm // a transform
 {
 	Vector3 Translation;
 	Quaterneion Rotation;
 	Vector3 Scale;
 } 40 bytes
+```
 
+```
 rlmModel // a group of meshes, materials, and an orientation transform
 {
 	int GroupCount;	// 4
@@ -84,7 +108,9 @@ rlmModel // a group of meshes, materials, and an orientation transform
 	bool OwnsGroups;	//1
 	rlmPQSTransorm OrientationTransform; // 40 (store as pointer? )
 }; // 53 bytes
+```
 
+```
 void rlmUploadMesh(rlmMesh* mesh, bool releaseGeoBuffers);
 
 rlmMaterialDef rlmGetDefaultMaterial();
@@ -95,3 +121,4 @@ void rlmAddMaterialChannel(rlmMaterialDef*, Texture2d, int shaderLoc)
 void rlmSetMaterialChannelTexture(rlmMaterialChannel*, Texture2D);
 
 void rlmSetMaterialDefShader(rlmMaterialDef*, Shader);
+```
