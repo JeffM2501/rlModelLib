@@ -252,7 +252,7 @@ void LoadMaterial(cgltf_material* mat, rlmMaterialDef* material)
 
     }
 
-    material->extraChannels = (rlmMaterialChannel*)RL_MALLOC(extraChannelCount * sizeof(rlmMaterialChannel));
+    material->extraChannels = (rlmMaterialChannel*)MemAlloc(extraChannelCount * sizeof(rlmMaterialChannel));
 
     if (mat->has_pbr_metallic_roughness)
     {
@@ -328,19 +328,19 @@ void LoadGroups(cgltf_data* data, rlmModel* model)
     if (data->materials_count == 0)
     {
         model->groupCount = 1;
-        model->groups = (rlmModelGroup*)RL_MALLOC(model->groupCount * sizeof(rlmModelGroup));
+        model->groups = (rlmModelGroup*)MemAlloc(model->groupCount * sizeof(rlmModelGroup));
         model->groups[0].material = rlmGetDefaultMaterial();
     }
     else
     {
         model->groupCount = data->materials_count;
-        model->groups = (rlmModelGroup*)RL_MALLOC(model->groupCount * sizeof(rlmModelGroup));
+        model->groups = (rlmModelGroup*)MemAlloc(model->groupCount * sizeof(rlmModelGroup));
 
         for (int m = 0; m < data->materials_count; m++)
         {
             cgltf_material* mat = &(data->materials[m]);
            
-            model->groups[m].material.name = RL_MALLOC(strlen(mat->name) + 1);
+            model->groups[m].material.name = MemAlloc(strlen(mat->name) + 1);
             strcpy(model->groups[m].material.name, mat->name);
 
             LoadMaterial(mat, &model->groups[m].material);
@@ -369,7 +369,7 @@ void LoadMeshes(cgltf_data* data, rlmModelGroup* group)
             group->meshCount++;
         }
     }  
-    group->meshes = (rlmMesh*)RL_MALLOC(group->meshCount * sizeof(rlmMesh));
+    group->meshes = (rlmMesh*)MemAlloc(group->meshCount * sizeof(rlmMesh));
 
     int meshIndex = 0;
     for (int index = 0; index < data->nodes_count; index++)
@@ -380,6 +380,8 @@ void LoadMeshes(cgltf_data* data, rlmModelGroup* group)
         if (!mesh)
             continue;
 
+        rlmMesh* pOutMesh = group->meshes + meshIndex;
+
         for (int primIndex = 0; primIndex < mesh->primitives_count; primIndex++)
         {
             cgltf_primitive* prim = mesh->primitives + primIndex;
@@ -387,7 +389,11 @@ void LoadMeshes(cgltf_data* data, rlmModelGroup* group)
             if (strcmp(prim->material->name, group->material.name) != 0)
                 continue;
 
-            group->meshes[meshIndex].name
+            pOutMesh->name = MemAlloc(strlen(mesh->name) + 1);
+            strcpy(pOutMesh->name, mesh->name);
+
+            pOutMesh->transform = rlmPQSIdentity();
+            pOutMesh->meshBuffers = (rlmMeshBuffers*)MemAlloc(sizeof(rlmMeshBuffers));
 
             meshIndex++;
         }
