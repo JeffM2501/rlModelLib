@@ -119,7 +119,8 @@ extern "C" {            // Prevents name mangling of functions
 		int boneCount;
 		rlmBoneInfo* bones;
 
-		rlmBoneInfo* rootBone;
+		int rootCount;
+		rlmBoneInfo** rootBones;
 
 		rlmAnimationKeyframe bindingFrame;
 	}rlmSkeleton;

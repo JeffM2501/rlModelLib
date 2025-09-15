@@ -40,9 +40,11 @@ rlmModel rlmLoadFromModelEX(Model raylibModel, bool keepCPUdata)
 
 		for (int i = 0; i < skeleton->boneCount; i++)
 		{
-			if (skeleton->bones[i].parentId < 0 && !skeleton->rootBone)
+			if (skeleton->bones[i].parentId < 0 && !skeleton->rootBones)
 			{
-				skeleton->rootBone = &skeleton->bones[i];
+				skeleton->rootCount = 1;
+				skeleton->rootBones = MemAlloc(sizeof(rlmBoneInfo*) * 1);
+				skeleton->rootBones[0] =  skeleton->bones+i;
 			}
 			else if (skeleton->bones[i].parentId >= 0)
 			{

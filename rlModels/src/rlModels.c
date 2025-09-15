@@ -551,6 +551,8 @@ void rlmUnloadModel(rlmModel* model)
 
 	if (model->ownsSkeleton && model->skeleton)
 	{
+		MemFree(model->skeleton->rootBones);
+
 		MemFree(model->skeleton->bones);
 		model->skeleton->bones = NULL;
 		MemFree(model->skeleton->bindingFrame.boneTransforms);
@@ -981,7 +983,8 @@ void rlmSetPoseToKeyframe(rlmModel model, rlmModelAnimationPose* pose, rlmAnimat
 	if (!model.skeleton)
 		return;
 
-	rlmSetBonePoseRecursive(model.skeleton->rootBone, &model.skeleton->bindingFrame, &frame, pose);
+    for (int i = 0; i < model.skeleton->rootCount; i++)
+		rlmSetBonePoseRecursive(model.skeleton->rootBones[i], &model.skeleton->bindingFrame, &frame, pose);
 }
 
 void rlmSetPoseToKeyframeEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame, rlmBoneInfo* startBone)
@@ -989,10 +992,13 @@ void rlmSetPoseToKeyframeEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnim
 	if (!model.skeleton)
 		return;
 
-	if (startBone == NULL)
-		startBone = model.skeleton->rootBone;
-
-	rlmSetBonePoseRecursive(startBone, &model.skeleton->bindingFrame, &frame, pose);
+	if (startBone != NULL)
+	{
+		rlmSetBonePoseRecursive(startBone, &model.skeleton->bindingFrame, &frame, pose);
+		return;
+	}
+	for (int i = 0; i < model.skeleton->rootCount; i++)
+		rlmSetBonePoseRecursive(model.skeleton->rootBones[i], &model.skeleton->bindingFrame, &frame, pose);
 }
 
 void rlmSetPoseToKeyframesLerp(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param)
@@ -1000,7 +1006,8 @@ void rlmSetPoseToKeyframesLerp(rlmModel model, rlmModelAnimationPose* pose, rlmA
 	if (!model.skeleton)
 		return;
 
-	rlmSetBonePoseRecursiveLerp(model.skeleton->rootBone, &model.skeleton->bindingFrame, &frame1, &frame2, param, pose);
+    for (int i = 0; i < model.skeleton->rootCount; i++)
+		rlmSetBonePoseRecursiveLerp(model.skeleton->rootBones[i], &model.skeleton->bindingFrame, &frame1, &frame2, param, pose);
 }
 
 void rlmSetPoseToKeyframesLerpEx(rlmModel model, rlmModelAnimationPose* pose, rlmAnimationKeyframe frame1, rlmAnimationKeyframe frame2, float param, rlmBoneInfo* startBone)
@@ -1008,10 +1015,14 @@ void rlmSetPoseToKeyframesLerpEx(rlmModel model, rlmModelAnimationPose* pose, rl
 	if (!model.skeleton)
 		return;
 
-	if (startBone == NULL)
-		startBone = model.skeleton->rootBone;
-
-	rlmSetBonePoseRecursiveLerp(startBone, &model.skeleton->bindingFrame, &frame1, &frame2, param, pose);
+	if (startBone != NULL)
+	{
+		rlmSetBonePoseRecursiveLerp(startBone, &model.skeleton->bindingFrame, &frame1, &frame2, param, pose);
+		return;
+	}
+	
+	for (int i = 0; i < model.skeleton->rootCount; i++)
+		rlmSetBonePoseRecursiveLerp(model.skeleton->rootBones[i], &model.skeleton->bindingFrame, &frame1, &frame2, param, pose);
 }
 
 rlmBoneInfo* rlmFindBoneByName(rlmModel model, const char* boneName)

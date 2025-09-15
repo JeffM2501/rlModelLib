@@ -2,6 +2,13 @@
 #include "raylib.h"
 #include "rlModels.h"
 
+#include "raylib.h"
+#include "rlgl.h"
+#include "raymath.h"
+
+#include <string.h>
+#include <stdlib.h>
+
 #define LOAD_ATTRIBUTE(accesor, numComp, srcType, dstPtr) LOAD_ATTRIBUTE_CAST(accesor, numComp, srcType, dstPtr, srcType)
 
 #define LOAD_ATTRIBUTE_CAST(accesor, numComp, srcType, dstPtr, dstType) \
@@ -144,7 +151,12 @@ void LoadPBRMaterial(cgltf_material* mat, rlmMaterialDef* material)
     material->shader.locs = rlGetShaderLocsDefault();
 
     material->baseChannel.ownsTexture = false;
-    material->baseChannel.textureId = 0;
+    material->baseChannel.textureId = rlGetTextureIdDefault();
+    material->baseChannel.textureLoc = -1;
+
+    material->baseChannel.color = WHITE;
+    material->baseChannel.colorLoc = -SHADER_LOC_COLOR_DIFFUSE;
+
     // Load base color texture (albedo)
     if (mat->pbr_metallic_roughness.base_color_texture.texture)
     {
@@ -192,7 +204,7 @@ void LoadPBRMaterial(cgltf_material* mat, rlmMaterialDef* material)
                 }
             }
 
-            unsigned char metalnessValue = mat->pbr_metallic_roughness.metallic_factor * 255;
+            unsigned char metalnessValue = (unsigned char)(mat->pbr_metallic_roughness.metallic_factor * 255);
             material->extraChannels[0].color = (Color){ metalnessValue,metalnessValue,metalnessValue,255 };
 
             material->extraChannels[0].textureSlot = MATERIAL_MAP_METALNESS;
@@ -202,7 +214,7 @@ void LoadPBRMaterial(cgltf_material* mat, rlmMaterialDef* material)
             material->extraChannels[0].textureId = LoadTextureFromImage(imMetallic).id;
 
 
-            unsigned char roughnessValue = mat->pbr_metallic_roughness.roughness_factor * 255;
+            unsigned char roughnessValue = (unsigned char)(mat->pbr_metallic_roughness.roughness_factor * 255);
             material->extraChannels[1].color = (Color){ roughnessValue,roughnessValue,roughnessValue,255 };
 
             material->extraChannels[1].textureSlot = MATERIAL_MAP_ROUGHNESS;
@@ -333,22 +345,299 @@ void LoadGroups(cgltf_data* data, rlmModel* model)
     }
     else
     {
-        model->groupCount = data->materials_count;
+        model->groupCount = (int)data->materials_count;
         model->groups = (rlmModelGroup*)MemAlloc(model->groupCount * sizeof(rlmModelGroup));
 
         for (int m = 0; m < data->materials_count; m++)
         {
             cgltf_material* mat = &(data->materials[m]);
-           
-            model->groups[m].material.name = MemAlloc(strlen(mat->name) + 1);
-            strcpy(model->groups[m].material.name, mat->name);
+            model->groups[m].material = rlmGetDefaultMaterial();
 
             LoadMaterial(mat, &model->groups[m].material);
         }
     }
 }
 
-void LoadMeshes(cgltf_data* data, rlmModelGroup* group)
+#define LOAD_ATTRIBUTE(accesor, numComp, srcType, dstPtr) LOAD_ATTRIBUTE_CAST(accesor, numComp, srcType, dstPtr, srcType)
+
+#define LOAD_ATTRIBUTE_CAST(accesor, numComp, srcType, dstPtr, dstType) \
+    { \
+        int n = 0; \
+        srcType *buffer = (srcType *)accesor->buffer_view->buffer->data + accesor->buffer_view->offset/sizeof(srcType) + accesor->offset/sizeof(srcType); \
+        for (unsigned int k = 0; k < accesor->count; k++) \
+        {\
+            for (int l = 0; l < numComp; l++) \
+            {\
+                dstPtr[numComp*k + l] = (dstType)buffer[n + l];\
+            }\
+            n += (int)(accesor->stride/sizeof(srcType));\
+        }\
+    }
+
+
+void ProcessGLTFPositionPrimitive(rlmMesh* mesh, cgltf_accessor* attribute, Matrix* worldMatrix)
+{
+    if ((attribute->type == cgltf_type_vec3) && (attribute->component_type == cgltf_component_type_r_32f))
+    {
+        // Init raylib mesh vertices to copy glTF attribute data
+        mesh->meshBuffers->vertexCount = (int)attribute->count;
+        if (mesh->meshBuffers->vertices == NULL)
+            mesh->meshBuffers->vertices = (float*)MemAlloc((unsigned int)(attribute->count * 3 * sizeof(float)));
+
+        // Load 3 components of float data type into mesh.vertices
+        LOAD_ATTRIBUTE(attribute, 3, float, mesh->meshBuffers->vertices)
+
+        // Transform the vertices
+        float* vertices = mesh->meshBuffers->vertices;
+        for (unsigned int k = 0; k < attribute->count; k++)
+        {
+            Vector3 vt = Vector3Transform((Vector3){ vertices[3 * k], vertices[3 * k + 1], vertices[3 * k + 2] }, *worldMatrix);
+            vertices[3 * k] = vt.x;
+            vertices[3 * k + 1] = vt.y;
+            vertices[3 * k + 2] = vt.z;
+        }
+    }
+}
+
+void ProcessGLTFNormalPrimitive(rlmMesh* mesh, cgltf_accessor* attribute, Matrix* worldMatrix)
+{
+    if ((attribute->type == cgltf_type_vec3) && (attribute->component_type == cgltf_component_type_r_32f))
+    {
+        // Init raylib mesh normals to copy glTF attribute data
+        if (mesh->meshBuffers->normals == NULL)
+            mesh->meshBuffers->normals = (float*)MemAlloc((unsigned int)(attribute->count * 3 * sizeof(float)));
+
+        // Load 3 components of float data type into mesh.normals
+        LOAD_ATTRIBUTE(attribute, 3, float, mesh->meshBuffers->normals)
+
+            // Transform the normals
+            float* normals = mesh->meshBuffers->normals;
+
+        Matrix normalMatrix = MatrixTranspose(MatrixInvert(*worldMatrix));
+        for (unsigned int k = 0; k < attribute->count; k++)
+        {
+            Vector3 nt = Vector3Transform((Vector3){ normals[3 * k], normals[3 * k + 1], normals[3 * k + 2] }, normalMatrix);
+            normals[3 * k] = nt.x;
+            normals[3 * k + 1] = nt.y;
+            normals[3 * k + 2] = nt.z;
+        }
+    }
+}
+
+void ProcessGLTFTangentPrimitive(rlmMesh* mesh, cgltf_accessor* attribute, Matrix* worldMatrix)
+{
+    if ((attribute->type == cgltf_type_vec4) && (attribute->component_type == cgltf_component_type_r_32f))
+    {
+        // Init raylib mesh tangent to copy glTF attribute data
+        if (mesh->meshBuffers->tangents == NULL)
+            mesh->meshBuffers->tangents = (float*)MemAlloc((unsigned int)(attribute->count * 4 * sizeof(float)));
+
+        // Load 4 components of float data type into mesh.tangents
+        LOAD_ATTRIBUTE(attribute, 4, float, mesh->meshBuffers->tangents)
+
+        // Transform the tangents
+        float* tangents = mesh->meshBuffers->tangents;
+        for (unsigned int k = 0; k < attribute->count; k++)
+        {
+            Vector3 tt = Vector3Transform((Vector3){ tangents[3 * k], tangents[3 * k + 1], tangents[3 * k + 2] }, *worldMatrix);
+            tangents[3 * k] = tt.x;
+            tangents[3 * k + 1] = tt.y;
+            tangents[3 * k + 2] = tt.z;
+        }
+    }
+}
+
+void ProcessGLTFTextureCoordsPrimitive(rlmMesh* mesh, cgltf_accessor* attribute, int index)
+{
+    if (attribute->type != cgltf_type_vec2)
+        return;
+
+    // Support up to 2 texture coordinates attributes
+    float* texcoordPtr = NULL;
+
+    if (index == 0)
+    {
+        if (mesh->meshBuffers->texcoords == NULL)
+            mesh->meshBuffers->texcoords = (float*)MemAlloc((unsigned int)(attribute->count * 2 * sizeof(float)));
+        texcoordPtr = mesh->meshBuffers->texcoords;
+    }
+    else if (index == 1)
+    {
+        if (mesh->meshBuffers->texcoords2 == NULL)
+            mesh->meshBuffers->texcoords2 = (float*)MemAlloc((unsigned int)(attribute->count * 2 * sizeof(float)));
+        texcoordPtr = mesh->meshBuffers->texcoords2;
+    }
+    else
+    {
+        return;
+    }
+
+    if (attribute->component_type == cgltf_component_type_r_32f)  // vec2, float
+    {
+        // Load 3 components of float data type into mesh.texcoords
+        LOAD_ATTRIBUTE(attribute, 2, float, texcoordPtr)
+    }
+    else if (attribute->component_type == cgltf_component_type_r_8u) // vec2, u8n
+    {
+        // Load data into a temp buffer to be converted to raylib data type
+        unsigned char* temp = (unsigned char*)MemAlloc((unsigned int)(attribute->count * 2 * sizeof(unsigned char)));
+        LOAD_ATTRIBUTE(attribute, 2, unsigned char, temp);
+
+        // Convert data to raylib texcoord data type (float)
+        for (unsigned int t = 0; t < attribute->count * 2; t++)
+            texcoordPtr[t] = (float)temp[t] / 255.0f;
+
+        MemFree(temp);
+    }
+    else if (attribute->component_type == cgltf_component_type_r_16u) // vec2, u16n
+    {
+        // Load data into a temp buffer to be converted to raylib data type
+        unsigned short* temp = (unsigned short*)MemAlloc((unsigned int)(attribute->count * 2 * sizeof(unsigned short)));
+        LOAD_ATTRIBUTE(attribute, 2, unsigned short, temp);
+
+        // Convert data to raylib texcoord data type (float)
+        for (unsigned int t = 0; t < attribute->count * 2; t++)
+            texcoordPtr[t] = (float)temp[t] / 65535.0f;
+
+        MemFree(temp);
+    }
+}
+
+void ProcessGLTFColorPrimitive(rlmMesh* mesh, cgltf_accessor* attribute)
+{
+    // WARNING: SPECS: All components of each COLOR_n accessor element MUST be clamped to [0.0, 1.0] range
+
+    if (mesh->meshBuffers->colors == NULL)
+        mesh->meshBuffers->colors = (unsigned char*)MemAlloc((unsigned int)(attribute->count * 4 * sizeof(unsigned char)));
+
+    if (attribute->type == cgltf_type_vec3)  // RGB
+    {
+        if (attribute->component_type == cgltf_component_type_r_8u)
+        {
+            // Load data into a temp buffer to be converted to raylib data type
+            unsigned char* temp = (unsigned char*)MemAlloc((unsigned int)(attribute->count * 3 * sizeof(unsigned char)));
+            LOAD_ATTRIBUTE(attribute, 3, unsigned char, temp);
+
+            // Convert data to raylib color data type (4 bytes)
+            for (unsigned int c = 0, k = 0; c < (attribute->count * 4 - 3); c += 4, k += 3)
+            {
+                mesh->meshBuffers->colors[c] = temp[k];
+                mesh->meshBuffers->colors[c + 1] = temp[k + 1];
+                mesh->meshBuffers->colors[c + 2] = temp[k + 2];
+                mesh->meshBuffers->colors[c + 3] = 255;
+            }
+
+            MemFree(temp);
+        }
+        else if (attribute->component_type == cgltf_component_type_r_16u)
+        {
+            // Load data into a temp buffer to be converted to raylib data type
+            unsigned short* temp = (unsigned short*)MemAlloc((unsigned int)(attribute->count * 3 * sizeof(unsigned short)));
+            LOAD_ATTRIBUTE(attribute, 3, unsigned short, temp);
+
+            // Convert data to raylib color data type (4 bytes)
+            for (unsigned int c = 0, k = 0; c < (attribute->count * 4 - 3); c += 4, k += 3)
+            {
+                mesh->meshBuffers->colors[c] = (unsigned char)(((float)temp[k] / 65535.0f) * 255.0f);
+                mesh->meshBuffers->colors[c + 1] = (unsigned char)(((float)temp[k + 1] / 65535.0f) * 255.0f);
+                mesh->meshBuffers->colors[c + 2] = (unsigned char)(((float)temp[k + 2] / 65535.0f) * 255.0f);
+                mesh->meshBuffers->colors[c + 3] = 255;
+            }
+
+            MemFree(temp);
+        }
+        else if (attribute->component_type == cgltf_component_type_r_32f)
+        {
+            // Load data into a temp buffer to be converted to raylib data type
+            float* temp = (float*)MemAlloc((unsigned int)(attribute->count * 3 * sizeof(float)));
+            LOAD_ATTRIBUTE(attribute, 3, float, temp);
+
+            // Convert data to raylib color data type (4 bytes)
+            for (unsigned int c = 0, k = 0; c < (attribute->count * 4 - 3); c += 4, k += 3)
+            {
+                mesh->meshBuffers->colors[c] = (unsigned char)(temp[k] * 255.0f);
+                mesh->meshBuffers->colors[c + 1] = (unsigned char)(temp[k + 1] * 255.0f);
+                mesh->meshBuffers->colors[c + 2] = (unsigned char)(temp[k + 2] * 255.0f);
+                mesh->meshBuffers->colors[c + 3] = 255;
+            }
+
+            MemFree(temp);
+        }
+    }
+    else if (attribute->type == cgltf_type_vec4) // RGBA
+    {
+        if (attribute->component_type == cgltf_component_type_r_8u)
+        {
+            // Load 4 components of unsigned char data type into mesh.colors
+            LOAD_ATTRIBUTE(attribute, 4, unsigned char, mesh->meshBuffers->colors)
+        }
+        else if (attribute->component_type == cgltf_component_type_r_16u)
+        {
+            // Load data into a temp buffer to be converted to raylib data type
+            unsigned short* temp = (unsigned short*)MemAlloc((unsigned int)(attribute->count * 4 * sizeof(unsigned short)));
+            LOAD_ATTRIBUTE(attribute, 4, unsigned short, temp);
+
+            // Convert data to raylib color data type (4 bytes)
+            for (unsigned int c = 0; c < attribute->count * 4; c++)
+                mesh->meshBuffers->colors[c] = (unsigned char)(((float)temp[c] / 65535.0f) * 255.0f);
+
+            MemFree(temp);
+        }
+        else if (attribute->component_type == cgltf_component_type_r_32f)
+        {
+            // Load data into a temp buffer to be converted to raylib data type
+            float* temp = (float*)MemAlloc((unsigned int)(attribute->count * 4 * sizeof(float)));
+            LOAD_ATTRIBUTE(attribute, 4, float, temp);
+
+            // Convert data to raylib color data type (4 bytes), we expect the color data normalized
+            for (unsigned int c = 0; c < attribute->count * 4; c++)
+                mesh->meshBuffers->colors[c] = (unsigned char)(temp[c] * 255.0f);
+
+            MemFree(temp);
+        }
+    }
+}
+
+void LoadGLTFMeshIndecies(rlmMesh* mesh, cgltf_primitive* prim)
+{
+    // Load primitive indices data (if provided)
+    if ((prim->indices == NULL) || (prim->indices->buffer_view == NULL))
+    {
+        mesh->gpuMesh.isIndexed = false;
+        mesh->meshBuffers->triangleCount = mesh->meshBuffers->vertexCount / 3;    // Unindexed mesh
+        mesh->gpuMesh.elementCount = mesh->meshBuffers->vertexCount;
+        return;
+    }
+
+    mesh->gpuMesh.isIndexed = true;
+
+    cgltf_accessor* attribute = prim->indices;
+
+    mesh->meshBuffers->triangleCount = (int)attribute->count / 3;
+
+    mesh->gpuMesh.elementCount = mesh->meshBuffers->triangleCount * 3;
+
+    // Init raylib mesh indices to copy glTF attribute data
+    if (mesh->meshBuffers->indices == NULL)
+        mesh->meshBuffers->indices = (unsigned short*)MemAlloc((unsigned int)(attribute->count * sizeof(unsigned short)));
+
+    if (attribute->component_type == cgltf_component_type_r_16u)
+    {
+        // Load unsigned short data type into mesh.indices
+        LOAD_ATTRIBUTE(attribute, 1, unsigned short, mesh->meshBuffers->indices)
+    }
+    else if (attribute->component_type == cgltf_component_type_r_8u)
+    {
+        LOAD_ATTRIBUTE_CAST(attribute, 1, unsigned char, mesh->meshBuffers->indices, unsigned short)
+
+    }
+    else if (attribute->component_type == cgltf_component_type_r_32u)
+    {
+        LOAD_ATTRIBUTE_CAST(attribute, 1, unsigned int, mesh->meshBuffers->indices, unsigned short);
+    }
+}
+
+void LoadMeshes(cgltf_data* data, rlmModelGroup* group, bool keepCPUData)
 {
     group->meshCount = 0;
     for (int index = 0; index < data->nodes_count; index++)
@@ -366,10 +655,17 @@ void LoadMeshes(cgltf_data* data, rlmModelGroup* group)
             if (strcmp(prim->material->name, group->material.name) != 0)
                 continue;
 
+            if (prim->type != cgltf_primitive_type_triangles)
+                continue;
+
             group->meshCount++;
         }
     }  
     group->meshes = (rlmMesh*)MemAlloc(group->meshCount * sizeof(rlmMesh));
+
+    group->ownsMeshes = true;
+    group->ownsMeshList = true;
+    group->meshDisableFlags = (bool*)MemAlloc(group->meshCount * sizeof(bool));
 
     int meshIndex = 0;
     for (int index = 0; index < data->nodes_count; index++)
@@ -382,6 +678,18 @@ void LoadMeshes(cgltf_data* data, rlmModelGroup* group)
 
         rlmMesh* pOutMesh = group->meshes + meshIndex;
 
+        cgltf_float worldTransform[16];
+        cgltf_node_transform_world(node, worldTransform);
+
+        Matrix worldMatrix = {
+            worldTransform[0], worldTransform[4], worldTransform[8], worldTransform[12],
+            worldTransform[1], worldTransform[5], worldTransform[9], worldTransform[13],
+            worldTransform[2], worldTransform[6], worldTransform[10], worldTransform[14],
+            worldTransform[3], worldTransform[7], worldTransform[11], worldTransform[15]
+        };
+
+        Matrix worldMatrixNormals = MatrixTranspose(MatrixInvert(worldMatrix));
+
         for (int primIndex = 0; primIndex < mesh->primitives_count; primIndex++)
         {
             cgltf_primitive* prim = mesh->primitives + primIndex;
@@ -389,11 +697,46 @@ void LoadMeshes(cgltf_data* data, rlmModelGroup* group)
             if (strcmp(prim->material->name, group->material.name) != 0)
                 continue;
 
-            pOutMesh->name = MemAlloc(strlen(mesh->name) + 1);
-            strcpy(pOutMesh->name, mesh->name);
+            if (prim->type != cgltf_primitive_type_triangles)
+                continue;
+
+            const char* temp = TextFormat("%s.%s", node->name, mesh->name);
+            pOutMesh->name = MemAlloc((int)strlen(temp) + 1);
+            strcpy(pOutMesh->name, temp);
 
             pOutMesh->transform = rlmPQSIdentity();
             pOutMesh->meshBuffers = (rlmMeshBuffers*)MemAlloc(sizeof(rlmMeshBuffers));
+
+
+            for (unsigned int j = 0; j < mesh->primitives[primIndex].attributes_count; j++)
+            {
+                // Check the different attributes for every primitive
+                if (mesh->primitives[primIndex].attributes[j].type == cgltf_attribute_type_position)      // POSITION, vec3, float
+                {
+                    ProcessGLTFPositionPrimitive(pOutMesh, mesh->primitives[primIndex].attributes[j].data, &worldMatrix);
+                }
+                else if (mesh->primitives[primIndex].attributes[j].type == cgltf_attribute_type_normal)   // NORMAL, vec3, float
+                {
+                    ProcessGLTFNormalPrimitive(pOutMesh, mesh->primitives[primIndex].attributes[j].data, &worldMatrix);
+                }
+                else if (mesh->primitives[primIndex].attributes[j].type == cgltf_attribute_type_tangent)   // TANGENT, vec3, float
+                {
+                    ProcessGLTFTangentPrimitive(pOutMesh, mesh->primitives[primIndex].attributes[j].data, &worldMatrix);
+                }
+                else if (mesh->primitives[primIndex].attributes[j].type == cgltf_attribute_type_texcoord) // TEXCOORD_n, vec2, float/u8n/u16n
+                {
+                    ProcessGLTFTextureCoordsPrimitive(pOutMesh, mesh->primitives[primIndex].attributes[j].data, mesh->primitives[primIndex].attributes[j].index);
+                }
+                else if (mesh->primitives[primIndex].attributes[j].type == cgltf_attribute_type_color)    // COLOR_n, vec3/vec4, float/u8n/u16n
+                {
+                    ProcessGLTFColorPrimitive(pOutMesh, mesh->primitives[primIndex].attributes[j].data);
+                }
+                // NOTE: Attributes related to animations are processed separately
+            }
+
+            LoadGLTFMeshIndecies(pOutMesh, mesh->primitives + primIndex);
+
+            rlmUploadMesh(pOutMesh, !keepCPUData);
 
             meshIndex++;
         }
@@ -407,6 +750,7 @@ rlmModel rlmLoadModelGLTF(const char* fileName, bool keepCPUData)
     unsigned char* fileData = LoadFileData(fileName, &dataSize);
 
     rlmModel model = { 0 };
+    model.orientationTransform = rlmPQSIdentity();
 
     if (fileData == NULL)
         return model;
@@ -431,7 +775,7 @@ rlmModel rlmLoadModelGLTF(const char* fileName, bool keepCPUData)
 
             for (int g = 0; g < model.groupCount; g++)
             {
-                LoadMeshes(data, &model.groups + g);
+                LoadMeshes(data, model.groups + g, keepCPUData);
             }
         }
         // Free all cgltf loaded data
