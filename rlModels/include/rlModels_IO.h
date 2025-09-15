@@ -10,6 +10,8 @@ extern "C" {            // Prevents name mangling of functions
 	rlmModel rlmLoadFromModelEX(Model raylibModel, bool keepCPUData);
 
 	rlmModelAniamtionSequence* rlmLoadModelAnimations(rlmSkeleton* skeleton, ModelAnimation* animations, int animationCount);
+
+	rlmModel rlmLoadModelGLTF(const char* filName, bool keepCPUData);
 #if defined(__cplusplus)
 }
 #endif
