@@ -12,13 +12,13 @@ rlmModel rlmLoadFromModelEX(Model raylibModel, bool keepCPUdata)
 {
 	rlmModel newModel = { 0 };
 
-	if (raylibModel.boneCount > 0 && raylibModel.bones != NULL)
+	if (raylibModel.skeleton.boneCount > 0 && raylibModel.skeleton.bones != NULL)
 	{
 		newModel.ownsSkeleton = true;
 
 		rlmSkeleton* skeleton = (rlmSkeleton*)MemAlloc(sizeof(rlmSkeleton));
 
-		skeleton->boneCount = raylibModel.boneCount;
+		skeleton->boneCount = raylibModel.skeleton.boneCount;
 		skeleton->bones = (rlmBoneInfo*)MemAlloc(sizeof(rlmBoneInfo) * skeleton->boneCount);
 
 		skeleton->bindingFrame.boneTransforms = (rlmPQSTransorm*)MemAlloc(sizeof(rlmPQSTransorm) * skeleton->boneCount);
@@ -27,15 +27,15 @@ rlmModel rlmLoadFromModelEX(Model raylibModel, bool keepCPUdata)
 		{
 			skeleton->bones[i].boneId = i;
 			skeleton->bones[i].name[0] = '\0';
-			strcpy(skeleton->bones[i].name, raylibModel.bones[i].name);
+			strcpy(skeleton->bones[i].name, raylibModel.skeleton.bones[i].name);
 
-			skeleton->bones[i].parentId = raylibModel.bones[i].parent;
+			skeleton->bones[i].parentId = raylibModel.skeleton.bones[i].parent;
 			skeleton->bones[i].childBones = NULL;
 			skeleton->bones[i].childCount = 0;
 
-			skeleton->bindingFrame.boneTransforms[i].position = raylibModel.bindPose[i].translation;
-			skeleton->bindingFrame.boneTransforms[i].scale = raylibModel.bindPose[i].scale;
-			skeleton->bindingFrame.boneTransforms[i].rotation = raylibModel.bindPose[i].rotation;
+			skeleton->bindingFrame.boneTransforms[i].position = raylibModel.skeleton.bindPose[i].translation;
+			skeleton->bindingFrame.boneTransforms[i].scale = raylibModel.skeleton.bindPose[i].scale;
+			skeleton->bindingFrame.boneTransforms[i].rotation = raylibModel.skeleton.bindPose[i].rotation;
 		}
 
 		for (int i = 0; i < skeleton->boneCount; i++)
@@ -61,8 +61,8 @@ rlmModel rlmLoadFromModelEX(Model raylibModel, bool keepCPUdata)
 
 		newModel.skeleton = skeleton;
 
-		MemFree(raylibModel.bindPose);
-		MemFree(raylibModel.bones);
+		MemFree(raylibModel.skeleton.bindPose);
+		MemFree(raylibModel.skeleton.bones);
 	}
 
 	newModel.orientationTransform = rlmPQSIdentity();
@@ -182,7 +182,7 @@ rlmModel rlmLoadFromModelEX(Model raylibModel, bool keepCPUdata)
 				newMesh->meshBuffers->texcoords2 = oldMesh->texcoords2;
 				newMesh->meshBuffers->colors = oldMesh->colors;
 				newMesh->meshBuffers->indices = oldMesh->indices;
-				newMesh->meshBuffers->boneIds = oldMesh->boneIds;
+				newMesh->meshBuffers->boneIds = oldMesh->boneIndices;
 				newMesh->meshBuffers->boneWeights = oldMesh->boneWeights;
 
 				newMesh->meshBuffers->vertexCount = oldMesh->vertexCount;
@@ -199,7 +199,7 @@ rlmModel rlmLoadFromModelEX(Model raylibModel, bool keepCPUdata)
 				MemFree(oldMesh->indices);
 				MemFree(oldMesh->animVertices);
 				MemFree(oldMesh->animNormals);
-				MemFree(oldMesh->boneIds);
+				MemFree(oldMesh->boneIndices);
 				MemFree(oldMesh->boneWeights);
 			}
 
@@ -222,23 +222,23 @@ rlmModelAniamtionSequence* rlmLoadModelAnimations(rlmSkeleton* skeleton, ModelAn
 	{
 		memcpy(sequences[i].name, animations[i].name, 32);
 		sequences[i].fps = 30;
-		sequences[i].keyframeCount = animations[i].frameCount;
-		sequences[i].keyframes = (rlmAnimationKeyframe*)MemAlloc(sizeof(rlmAnimationKeyframe) * animations[i].frameCount);
+		sequences[i].keyframeCount = animations[i].keyframeCount;
+		sequences[i].keyframes = (rlmAnimationKeyframe*)MemAlloc(sizeof(rlmAnimationKeyframe) * animations[i].keyframeCount);
 
-		for (int f = 0; f < animations[i].frameCount; f++)
+		for (int f = 0; f < animations[i].keyframeCount; f++)
 		{
 			sequences[i].keyframes[f].boneTransforms = (rlmPQSTransorm*)MemAlloc(sizeof(rlmPQSTransorm) * skeleton->boneCount);
 
 			for (int b = 0; b < skeleton->boneCount; b++)
 			{
-				sequences[i].keyframes[f].boneTransforms[b].position = animations[i].framePoses[f][b].translation;
-				sequences[i].keyframes[f].boneTransforms[b].rotation = animations[i].framePoses[f][b].rotation;
-				sequences[i].keyframes[f].boneTransforms[b].scale = animations[i].framePoses[f][b].scale;
+				sequences[i].keyframes[f].boneTransforms[b].position = animations[i].keyframePoses[f][b].translation;
+				sequences[i].keyframes[f].boneTransforms[b].rotation = animations[i].keyframePoses[f][b].rotation;
+				sequences[i].keyframes[f].boneTransforms[b].scale = animations[i].keyframePoses[f][b].scale;
 			}
 
-			MemFree(animations[i].framePoses[f]);
+			MemFree(animations[i].keyframePoses[f]);
 		}
-		MemFree(animations[i].framePoses);
+		MemFree(animations[i].keyframePoses);
 	}
 	MemFree(animations);
 

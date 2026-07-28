@@ -1,7 +1,6 @@
 #include "rlModels.h"
-
-#include "rlgl.h"
 #include "config.h"
+#include "rlgl.h"
 
 #include <string.h>
 
@@ -10,6 +9,8 @@ static bool DefaultMaterialShaderSet = false;
 
 #define MAX_BONE_NUM 128
 static Matrix DefaultBoneMatricies[MAX_BONE_NUM] = { 0 };
+
+#define MAX_MESH_VERTEX_BUFFERS  9      // Maximum vertex buffers (VBO) per mesh
 
 static void CheckGlobalBoneMatricies()
 {
@@ -209,7 +210,7 @@ void rlmUploadMesh(rlmMesh* mesh, bool releaseGeoBuffers)
 		mesh->gpuMesh.vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_INDICES] = rlLoadVertexBufferElement(mesh->meshBuffers->indices, mesh->meshBuffers->triangleCount * 3 * sizeof(unsigned short), dynamic);
 	}
 
-	if (mesh->gpuMesh.vaoId > 0) TRACELOG(LOG_INFO, "VAO: [ID %i] Mesh uploaded successfully to VRAM (GPU)", mesh->vaoId);
+	if (mesh->gpuMesh.vaoId > 0) TRACELOG(LOG_INFO, "VAO: [ID %i] Mesh uploaded successfully to VRAM (GPU)", mesh->gpuMesh.vaoId);
 	else TRACELOG(LOG_INFO, "VBO: Mesh uploaded successfully to VRAM (GPU)");
 
 	rlDisableVertexArray();
@@ -799,14 +800,14 @@ void rlmDrawModel(rlmModel model, rlmPQSTransorm transform)
 			rlSetUniformMatrix(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_MVP], matModelViewProjection);
 
 			// if the shader wants bones, set identity matricies, so it can still draw
-			if (groupPtr->material.shader.locs[SHADER_LOC_BONE_MATRICES] >= 0)
+			if (groupPtr->material.shader.locs[SHADER_LOC_MATRIX_BONETRANSFORMS] >= 0)
 			{
 				int count = MAX_BONE_NUM;
 				if (model.skeleton)
 					count = model.skeleton->boneCount;
 
 				CheckGlobalBoneMatricies();
-				rlSetUniformMatrices(groupPtr->material.shader.locs[SHADER_LOC_BONE_MATRICES], DefaultBoneMatricies, count);
+				rlSetUniformMatrices(groupPtr->material.shader.locs[SHADER_LOC_MATRIX_BONETRANSFORMS], DefaultBoneMatricies, count);
 			}
 
 			if (groupPtr->meshDisableFlags == NULL || !groupPtr->meshDisableFlags[i])
@@ -849,12 +850,12 @@ void rlmDrawModelWithPoseEx(rlmModel model, rlmPQSTransorm transform, rlmModelAn
 		}
 
 		// if the shader wants bones, set some bone matricies
-		if (shaderToUse->locs[SHADER_LOC_BONE_MATRICES] >= 0)
+		if (shaderToUse->locs[SHADER_LOC_MATRIX_BONETRANSFORMS] >= 0)
 		{
 			// if we have a real pose, use it
 			if (model.skeleton && pose)
 			{
-				rlSetUniformMatrices(shaderToUse->locs[SHADER_LOC_BONE_MATRICES], pose->boneMatricies, model.skeleton->boneCount);
+				rlSetUniformMatrices(shaderToUse->locs[SHADER_LOC_MATRIX_BONETRANSFORMS], pose->boneMatricies, model.skeleton->boneCount);
 			}
 			else // otherwise just fill out a list of default bones.
 			{
@@ -863,7 +864,7 @@ void rlmDrawModelWithPoseEx(rlmModel model, rlmPQSTransorm transform, rlmModelAn
 					count = model.skeleton->boneCount;
 
 				CheckGlobalBoneMatricies();
-				rlSetUniformMatrices(shaderToUse->locs[SHADER_LOC_BONE_MATRICES], DefaultBoneMatricies, count);
+				rlSetUniformMatrices(shaderToUse->locs[SHADER_LOC_MATRIX_BONETRANSFORMS], DefaultBoneMatricies, count);
 			}
 		}
 
