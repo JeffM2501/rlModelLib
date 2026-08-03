@@ -79,10 +79,8 @@ void rlmUploadMesh(rlmMesh* mesh, bool releaseGeoBuffers)
 	mesh->gpuMesh.vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_TEXCOORD2] = 0;    // Vertex buffer: texcoords2
 	mesh->gpuMesh.vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_INDICES] = 0;      // Vertex buffer: indices
 
-#ifdef RL_SUPPORT_MESH_GPU_SKINNING
-	mesh->gpuMesh.vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEIDS] = 0;      // Vertex buffer: boneIds
+	mesh->gpuMesh.vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEINDICES] = 0;      // Vertex buffer: boneIds
 	mesh->gpuMesh.vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEWEIGHTS] = 0;  // Vertex buffer: boneWeights
-#endif
 
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
 	mesh->gpuMesh.vaoId = rlLoadVertexArray();
@@ -171,21 +169,20 @@ void rlmUploadMesh(rlmMesh* mesh, bool releaseGeoBuffers)
 		rlDisableVertexAttribute(RL_DEFAULT_SHADER_ATTRIB_LOCATION_TEXCOORD2);
 	}
 
-#ifdef RL_SUPPORT_MESH_GPU_SKINNING
 	if (mesh->meshBuffers->boneIds != NULL)
 	{
 		// Enable vertex attribute: boneIds (shader-location = 7)
-		mesh->gpuMesh.vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEIDS] = rlLoadVertexBuffer(mesh->meshBuffers->boneIds, mesh->meshBuffers->vertexCount * 4 * sizeof(unsigned char), dynamic);
-		rlSetVertexAttribute(RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEIDS, 4, RL_UNSIGNED_BYTE, 0, 0, 0);
-		rlEnableVertexAttribute(RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEIDS);
+		mesh->gpuMesh.vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEINDICES] = rlLoadVertexBuffer(mesh->meshBuffers->boneIds, mesh->meshBuffers->vertexCount * 4 * sizeof(unsigned char), dynamic);
+		rlSetVertexAttribute(RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEINDICES, 4, RL_UNSIGNED_BYTE, 0, 0, 0);
+		rlEnableVertexAttribute(RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEINDICES);
 	}
 	else
 	{
 		// Default vertex attribute: boneIds
 		// WARNING: Default value provided to shader if location available
 		float value[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-		rlSetVertexAttributeDefault(RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEIDS, value, SHADER_ATTRIB_VEC4, 4);
-		rlDisableVertexAttribute(RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEIDS);
+		rlSetVertexAttributeDefault(RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEINDICES, value, SHADER_ATTRIB_VEC4, 4);
+		rlDisableVertexAttribute(RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEINDICES);
 	}
 
 	if (mesh->meshBuffers->boneWeights != NULL)
@@ -203,7 +200,6 @@ void rlmUploadMesh(rlmMesh* mesh, bool releaseGeoBuffers)
 		rlSetVertexAttributeDefault(RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEWEIGHTS, value, SHADER_ATTRIB_VEC4, 2);
 		rlDisableVertexAttribute(RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEWEIGHTS);
 	}
-#endif
 
 	if (mesh->meshBuffers->indices != NULL)
 	{
@@ -719,11 +715,10 @@ void rlmDrawMesh(rlmGPUMesh* mesh, Shader* shader)
 			rlEnableVertexAttribute(shader->locs[SHADER_LOC_VERTEX_TEXCOORD02]);
 		}
 
-#ifdef RL_SUPPORT_MESH_GPU_SKINNING
 		// Bind mesh VBO data: vertex bone ids (shader-location = 6, if available)
 		if (shader->locs[SHADER_LOC_VERTEX_BONEIDS] != -1)
 		{
-			rlEnableVertexBuffer(mesh->vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEIDS]);
+			rlEnableVertexBuffer(mesh->vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_BONEINDICES]);
 			rlSetVertexAttribute(shader->locs[SHADER_LOC_VERTEX_BONEIDS], 4, RL_UNSIGNED_BYTE, 0, 0, 0);
 			rlEnableVertexAttribute(shader->locs[SHADER_LOC_VERTEX_BONEIDS]);
 		}
@@ -735,7 +730,6 @@ void rlmDrawMesh(rlmGPUMesh* mesh, Shader* shader)
 			rlSetVertexAttribute(shader->locs[SHADER_LOC_VERTEX_BONEWEIGHTS], 4, RL_FLOAT, 0, 0, 0);
 			rlEnableVertexAttribute(shader->locs[SHADER_LOC_VERTEX_BONEWEIGHTS]);
 		}
-#endif
 
 		if (mesh->isIndexed)
 			rlEnableVertexBufferElement(mesh->vboIds[RL_DEFAULT_SHADER_ATTRIB_LOCATION_INDICES]);

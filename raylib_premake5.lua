@@ -83,6 +83,8 @@ function link_raylib()
     includedirs {"../" .. raylib_dir .."/src/external/glfw/include" }
     platform_defines()
 
+    defines{"SUPPORT_GPU_SKINNING=1"}
+
     filter "action:vs*"
         defines{"_WINSOCK_DEPRECATED_NO_WARNINGS", "_CRT_SECURE_NO_WARNINGS"}
         dependson {"raylib"}
@@ -138,6 +140,7 @@ project "raylib"
     raylib_dir = get_raylib_dir();
 
     platform_defines()
+    defines{"SUPPORT_GPU_SKINNING=1"}
 
     location (raylib_dir)
     language "C"
