@@ -1165,6 +1165,11 @@ RayCollision rlmGetRayCollisionMesh(Ray ray, const rlmMesh* mesh, rlmPQSTransorm
 	Quaternion rot = QuaternionFromMatrix(invMatrix);
 	ray.direction = Vector3RotateByQuaternion(ray.direction, rot);
 
+	if (!GetRayCollisionBox(ray, mesh->bounds).hit)
+	{
+		return collision;
+	}
+
     int triangleCount = mesh->meshBuffers->triangleCount;
 
     // Test against all triangles in mesh
