@@ -49,7 +49,7 @@ void GameInit()
     Model raylibModel = LoadModel("resources/castle.obj");
     raylibModel.materials[0].maps[0].texture = LoadTexture("resources/castle_diffuse.png");
 
-    newModel = rlmLoadFromModel(raylibModel);
+    newModel = rlmLoadFromModelEX(raylibModel, true);
     newModel.groups[0].material.baseChannel.ownsTexture = true;
     newModel.orientationTransform.position.x = 25;
 
@@ -82,8 +82,16 @@ void GameDraw()
     ClearBackground(DARKGRAY);
     BeginMode3D(ViewCam);
 
+    auto col = rlmGetRayCollisionModel(GetScreenToWorldRay(GetMousePosition(), ViewCam), &newModel, rlmPQSIdentity(), NULL);
+    auto col2 = rlmGetRayCollisionModel(GetScreenToWorldRay(GetMousePosition(), ViewCam), &cloneModel, rlmPQSIdentity(), NULL);
+
     rlmDrawModel(newModel, rlmPQSIdentity());
     rlmDrawModel(cloneModel, rlmPQSIdentity());
+
+    if (col.hit)
+        DrawSphere(col.point, 1, RED);
+    if (col2.hit)
+        DrawSphere(col2.point, 1, BLUE);
 
     DrawGrid(100, 1);
 

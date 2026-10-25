@@ -241,7 +241,11 @@ extern "C" {            // Prevents name mangling of functions
 	void rlmSetDefaultMaterialShader(Shader shader);
 	void rlmClearDefaultMaterialShader();
 
-#if defined (RLMODELS_IMPLEMENTATION)
+	// collision API
+	RayCollision rlmGetRayCollisionMesh(Ray ray, const rlmMesh* mesh, rlmPQSTransorm transform);						// Get collision info between ray and mesh
+    RayCollision rlmGetRayCollisionModel(Ray ray, const rlmModel* model, rlmPQSTransorm transform, rlmMesh** hitMesh);  // Get collision info between ray and the models in a mesh
+
+	#if defined (RLMODELS_IMPLEMENTATION)
 	// TODO put the guts here once it all works
 #endif
 

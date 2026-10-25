@@ -21,7 +21,6 @@ static void CheckGlobalBoneMatricies()
 		DefaultBoneMatricies[i] = MatrixIdentity();
 }
 
-
 void rlmSetDefaultMaterialShader(Shader shader)
 {
 	DefaultMaterialShader = shader;
@@ -1143,4 +1142,106 @@ rlmPQSTransorm rlmPQSLerp(const rlmPQSTransorm* lhs, const rlmPQSTransorm* rhs, 
 	transform.scale = Vector3Lerp(lhs->scale, rhs->scale, param);
 
 	return transform;
+}
+
+RayCollision rlmGetRayCollisionMesh(Ray ray, const rlmMesh* mesh, rlmPQSTransorm transform)
+{
+	RayCollision collision = { 0 };
+
+    // Check if mesh vertex data on CPU for testing
+	if (mesh == NULL || mesh->meshBuffers == NULL)
+		return collision;
+
+	collision.hit = false;
+
+	Matrix transformMat = rlmPQSToMatrix(&transform);
+	transformMat = MatrixMultiply(rlmPQSToMatrix(&mesh->transform), transformMat);
+	Matrix invMatrix = MatrixInvert(transformMat);
+
+	// transform the ray into the model, so we don't have to transform a bazillion verts
+	Vector3 orign = ray.position;
+
+	ray.position = Vector3Transform(ray.position, invMatrix);
+	Quaternion rot = QuaternionFromMatrix(invMatrix);
+	ray.direction = Vector3RotateByQuaternion(ray.direction, rot);
+
+    int triangleCount = mesh->meshBuffers->triangleCount;
+
+    // Test against all triangles in mesh
+    for (int i = 0; i < triangleCount; i++)
+    {
+        Vector3 a = { 0 };
+        Vector3 b = { 0 };
+        Vector3 c = { 0 };
+        Vector3* vertdata = (Vector3*)mesh->meshBuffers->vertices;
+
+        if (mesh->meshBuffers->indices)
+        {
+            a = vertdata[mesh->meshBuffers->indices[i * 3 + 0]];
+            b = vertdata[mesh->meshBuffers->indices[i * 3 + 1]];
+            c = vertdata[mesh->meshBuffers->indices[i * 3 + 2]];
+        }
+        else
+        {
+            a = vertdata[i * 3 + 0];
+            b = vertdata[i * 3 + 1];
+            c = vertdata[i * 3 + 2];
+        }
+
+        RayCollision triHitInfo = GetRayCollisionTriangle(ray, a, b, c);
+
+        if (triHitInfo.hit)
+        {
+			triHitInfo.point = Vector3Transform(triHitInfo.point, transformMat);
+            // Save the closest hit triangle
+            if ((!collision.hit) || (collision.distance > triHitInfo.distance)) collision = triHitInfo;
+        }
+    }
+
+    return collision;
+}
+
+RayCollision rlmGetRayCollisionModel(Ray ray, const rlmModel* model, rlmPQSTransorm transform, rlmMesh** hitMesh)
+{
+	RayCollision collision = { 0 };
+
+	if (hitMesh)
+	{
+		*hitMesh = NULL;
+	}
+
+	if (model == NULL)
+		return collision;
+
+
+	// multiply in the model matrix
+	Matrix mat = rlmPQSToMatrix(&transform);
+    Matrix modelMat = rlmPQSToMatrix(&model->orientationTransform);
+	mat = MatrixMultiply(modelMat, mat);
+
+	transform = rlmPQSFromMatrix(mat);
+
+	for (int group = 0; group < model->groupCount; group++)
+	{
+		rlmModelGroup* groupPtr = model->groups + group;
+
+		for (int meshIndex = 0; meshIndex < groupPtr->meshCount; meshIndex++)
+		{
+			rlmMesh* mesh = groupPtr->meshes + meshIndex;
+
+			RayCollision meshCollision = rlmGetRayCollisionMesh(ray, mesh, transform);
+			if (meshCollision.hit)
+			{
+				if (!collision.hit || meshCollision.distance < collision.distance)
+				{
+					collision = meshCollision;
+					if (hitMesh)
+					{
+						*hitMesh = mesh;
+					}
+				}
+			}
+		}
+	}
+	return collision;
 }
