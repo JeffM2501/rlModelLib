@@ -3,6 +3,7 @@
 #include "rlgl.h"
 
 #include <string.h>
+#include <ctype.h>
 
 static Shader DefaultMaterialShader = { 0 };
 static bool DefaultMaterialShaderSet = false;
@@ -546,14 +547,7 @@ void rlmUnloadModel(rlmModel* model)
     model->groups = NULL;
 
     if (model->ownsSkeleton && model->skeleton)
-    {
-        MemFree(model->skeleton->bones);
-        model->skeleton->bones = NULL;
-        MemFree(model->skeleton->bindingFrame.boneTransforms);
-        model->skeleton->bindingFrame.boneTransforms = NULL;
-
-        MemFree(model->skeleton);
-    }
+        rlmUnloadSkeleton(model->skeleton);
 
     model->ownsSkeleton = false;
     model->skeleton = NULL;
@@ -1021,9 +1015,620 @@ rlmBoneInfo* rlmFindBoneByName(rlmModel model, const char* boneName)
     return NULL;
 }
 
+void rlmUnloadSkeleton(rlmSkeleton* skeleton)
+{
+    if (!skeleton)
+        return;
+
+    if (skeleton->bones)
+    {
+        for (int i = 0; i < skeleton->boneCount; i++)
+            MemFree(skeleton->bones[i].childBones);
+    }
+
+    rlmUnloadSkeletonRetargetInfo(skeleton);
+
+    MemFree(skeleton->bones);
+    MemFree(skeleton->bindingFrame.boneTransforms);
+    MemFree(skeleton);
+}
+
+static bool rlmNameContainsNoCase(const char* name, const char* token)
+{
+    size_t tokenLen = strlen(token);
+    for (const char* start = name; *start; start++)
+    {
+        size_t i = 0;
+        while (i < tokenLen && start[i] && tolower((unsigned char)start[i]) == tolower((unsigned char)token[i]))
+            i++;
+
+        if (i == tokenLen)
+            return true;
+    }
+    return false;
+}
+
+static int rlmDetectHipBone(const rlmSkeleton* skeleton)
+{
+    const rlmSkeletonRetargetInfo* info = skeleton->retargetInfo;
+
+    // evalOrder is shallowest first, so the first match is the one closest to the root
+    for (int i = 0; i < skeleton->boneCount; i++)
+    {
+        const rlmBoneInfo* bone = &skeleton->bones[info->evalOrder[i]];
+        if (rlmNameContainsNoCase(bone->name, "hips") || rlmNameContainsNoCase(bone->name, "pelvis"))
+            return bone->boneId;
+    }
+
+    // no name match, a hip normally has a spine and two legs under it
+    for (int i = 0; i < skeleton->boneCount; i++)
+    {
+        const rlmBoneInfo* bone = &skeleton->bones[info->evalOrder[i]];
+        if (bone->childCount >= 3)
+            return bone->boneId;
+    }
+
+    return skeleton->rootBone ? skeleton->rootBone->boneId : -1;
+}
+
+static void rlmUpdateHipHeight(rlmSkeleton* skeleton)
+{
+    rlmSkeletonRetargetInfo* info = skeleton->retargetInfo;
+
+    // distance from the origin rather than a single axis, so it does not depend on which way is up
+    if (info->hipBone >= 0 && info->hipBone < skeleton->boneCount)
+        info->hipHeight = Vector3Length(info->referencePose.boneTransforms[info->hipBone].position);
+    else
+        info->hipHeight = 0;
+}
+
+void rlmComputeSkeletonRetargetInfo(rlmSkeleton* skeleton)
+{
+    if (!skeleton || skeleton->boneCount <= 0 || !skeleton->bones || !skeleton->bindingFrame.boneTransforms)
+        return;
+
+    bool existing = skeleton->retargetInfo != NULL;
+    if (!existing)
+    {
+        skeleton->retargetInfo = (rlmSkeletonRetargetInfo*)MemAlloc(sizeof(rlmSkeletonRetargetInfo));
+        skeleton->retargetInfo->hipBone = -1;
+    }
+
+    rlmSkeletonRetargetInfo* info = skeleton->retargetInfo;
+    size_t transformsSize = sizeof(rlmPQSTransorm) * skeleton->boneCount;
+
+    if (!info->localBindingFrame.boneTransforms)
+        info->localBindingFrame.boneTransforms = (rlmPQSTransorm*)MemAlloc((unsigned int)transformsSize);
+
+    if (!info->referencePose.boneTransforms)
+    {
+        info->referencePose.boneTransforms = (rlmPQSTransorm*)MemAlloc((unsigned int)transformsSize);
+        memcpy(info->referencePose.boneTransforms, skeleton->bindingFrame.boneTransforms, transformsSize);
+    }
+
+    if (!info->localReferencePose.boneTransforms)
+        info->localReferencePose.boneTransforms = (rlmPQSTransorm*)MemAlloc((unsigned int)transformsSize);
+
+    if (!info->evalOrder)
+        info->evalOrder = (int*)MemAlloc(sizeof(int) * skeleton->boneCount);
+
+    // breadth first from every root, using evalOrder as the queue
+    bool* visited = (bool*)MemAlloc(sizeof(bool) * skeleton->boneCount);
+    int count = 0;
+
+    for (int i = 0; i < skeleton->boneCount; i++)
+    {
+        if (skeleton->bones[i].parentId < 0)
+        {
+            info->evalOrder[count++] = i;
+            visited[i] = true;
+        }
+    }
+
+    for (int head = 0; head < count; head++)
+    {
+        const rlmBoneInfo* bone = &skeleton->bones[info->evalOrder[head]];
+        for (int c = 0; c < bone->childCount; c++)
+        {
+            int childId = bone->childBones[c]->boneId;
+            if (!visited[childId])
+            {
+                info->evalOrder[count++] = childId;
+                visited[childId] = true;
+            }
+        }
+    }
+
+    if (count < skeleton->boneCount)
+    {
+        TraceLog(LOG_WARNING, "rlModels : %d bones are not reachable from a root bone, they are appended to the evaluation order", skeleton->boneCount - count);
+        for (int i = 0; i < skeleton->boneCount; i++)
+        {
+            if (!visited[i])
+                info->evalOrder[count++] = i;
+        }
+    }
+    MemFree(visited);
+
+    rlmKeyframeModelToLocal(skeleton, &skeleton->bindingFrame, &info->localBindingFrame);
+    rlmKeyframeModelToLocal(skeleton, &info->referencePose, &info->localReferencePose);
+
+    if (!existing || info->hipBone < 0 || info->hipBone >= skeleton->boneCount)
+        info->hipBone = rlmDetectHipBone(skeleton);
+
+    rlmUpdateHipHeight(skeleton);
+}
+
+void rlmSetSkeletonReferencePose(rlmSkeleton* skeleton, rlmAnimationKeyframe modelSpacePose)
+{
+    if (!skeleton || !modelSpacePose.boneTransforms)
+        return;
+
+    if (!skeleton->retargetInfo)
+        rlmComputeSkeletonRetargetInfo(skeleton);
+
+    if (!skeleton->retargetInfo)
+        return;
+
+    memcpy(skeleton->retargetInfo->referencePose.boneTransforms, modelSpacePose.boneTransforms, sizeof(rlmPQSTransorm) * skeleton->boneCount);
+    rlmKeyframeModelToLocal(skeleton, &skeleton->retargetInfo->referencePose, &skeleton->retargetInfo->localReferencePose);
+    rlmUpdateHipHeight(skeleton);
+}
+
+void rlmSetSkeletonHipBone(rlmSkeleton* skeleton, int boneId)
+{
+    if (!skeleton || boneId < -1 || boneId >= skeleton->boneCount)
+        return;
+
+    if (!skeleton->retargetInfo)
+        rlmComputeSkeletonRetargetInfo(skeleton);
+
+    if (!skeleton->retargetInfo)
+        return;
+
+    skeleton->retargetInfo->hipBone = boneId;
+    rlmUpdateHipHeight(skeleton);
+}
+
+void rlmUnloadSkeletonRetargetInfo(rlmSkeleton* skeleton)
+{
+    if (!skeleton || !skeleton->retargetInfo)
+        return;
+
+    MemFree(skeleton->retargetInfo->localBindingFrame.boneTransforms);
+    MemFree(skeleton->retargetInfo->referencePose.boneTransforms);
+    MemFree(skeleton->retargetInfo->localReferencePose.boneTransforms);
+    MemFree(skeleton->retargetInfo->evalOrder);
+    MemFree(skeleton->retargetInfo);
+    skeleton->retargetInfo = NULL;
+}
+
+#define RLM_BONE_KEY_SIZE 48
+
+static bool rlmIsNameSeparator(char c)
+{
+    return c == '_' || c == '.' || c == ' ' || c == '-';
+}
+
+// builds a comparison key from a bone name: "<side>|<lowercase letters and digits>"
+// side is 'l', 'r' or '-', so Foot.L, L_Foot, foot_l, LeftFoot and mixamorig:LeftFoot all become "l|foot"
+static void rlmMakeBoneKey(const char* name, char* key)
+{
+    // drop namespace style prefixes such as "mixamorig:" or "Armature|"
+    const char* start = name;
+    for (const char* c = name; *c; c++)
+    {
+        if (*c == ':' || *c == '|')
+            start = c + 1;
+    }
+
+    char lower[RLM_BONE_KEY_SIZE] = { 0 };
+    int len = 0;
+    for (const char* c = start; *c && len < RLM_BONE_KEY_SIZE - 1; c++)
+        lower[len++] = (char)tolower((unsigned char)*c);
+
+    char side = '-';
+    char* found = NULL;
+    if ((found = strstr(lower, "left")) != NULL)
+    {
+        side = 'l';
+        memmove(found, found + 4, strlen(found + 4) + 1);
+    }
+    else if ((found = strstr(lower, "right")) != NULL)
+    {
+        side = 'r';
+        memmove(found, found + 5, strlen(found + 5) + 1);
+    }
+    else
+    {
+        len = (int)strlen(lower);
+        if (len >= 2 && (lower[0] == 'l' || lower[0] == 'r') && rlmIsNameSeparator(lower[1]))
+        {
+            side = lower[0];
+            lower[0] = ' ';
+        }
+        else if (len >= 2 && (lower[len - 1] == 'l' || lower[len - 1] == 'r') && rlmIsNameSeparator(lower[len - 2]))
+        {
+            side = lower[len - 1];
+            lower[len - 1] = ' ';
+        }
+    }
+
+    int k = 0;
+    key[k++] = side;
+    key[k++] = '|';
+    for (const char* c = lower; *c && k < RLM_BONE_KEY_SIZE - 1; c++)
+    {
+        if (isalnum((unsigned char)*c))
+            key[k++] = *c;
+    }
+    key[k] = '\0';
+}
+
+static int rlmFindSkeletonBone(const rlmSkeleton* skeleton, const char* name)
+{
+    for (int i = 0; i < skeleton->boneCount; i++)
+    {
+        if (strcmp(skeleton->bones[i].name, name) == 0)
+            return i;
+    }
+    return -1;
+}
+
+static int rlmMatchSourceBone(const rlmSkeleton* source, char (*sourceKeys)[RLM_BONE_KEY_SIZE], const char* targetName)
+{
+    int exact = rlmFindSkeletonBone(source, targetName);
+    if (exact >= 0)
+        return exact;
+
+    char targetKey[RLM_BONE_KEY_SIZE];
+    rlmMakeBoneKey(targetName, targetKey);
+    if (targetKey[2] == '\0')
+        return -1;
+
+    int match = -1;
+    for (int s = 0; s < source->boneCount; s++)
+    {
+        if (strcmp(sourceKeys[s], targetKey) != 0)
+            continue;
+
+        if (match >= 0)
+        {
+            TraceLog(LOG_DEBUG, "rlModels : Target bone %s matches more than one source bone, leaving it unmapped", targetName);
+            return -1;
+        }
+        match = s;
+    }
+    return match;
+}
+
+static void rlmCountRetargetMapped(rlmRetargetMap* map)
+{
+    map->mappedCount = 0;
+    for (int t = 0; t < map->target->boneCount; t++)
+    {
+        if (map->targetToSource[t] >= 0)
+            map->mappedCount++;
+    }
+}
+
+rlmRetargetMap rlmLoadRetargetMap(rlmSkeleton* source, rlmSkeleton* target)
+{
+    rlmRetargetMap map = { 0 };
+    map.rootCorrection = rlmPQSIdentity();
+    map.translationScale = 1;
+
+    if (!source || !target || source->boneCount <= 0 || target->boneCount <= 0)
+    {
+        TraceLog(LOG_WARNING, "rlModels : Retarget map needs a source and target skeleton with bones");
+        return map;
+    }
+
+    if (!source->retargetInfo)
+        rlmComputeSkeletonRetargetInfo(source);
+    if (!target->retargetInfo)
+        rlmComputeSkeletonRetargetInfo(target);
+
+    map.source = source;
+    map.target = target;
+    map.targetToSource = (int*)MemAlloc(sizeof(int) * target->boneCount);
+    map.rotationOffsets = (Quaternion*)MemAlloc(sizeof(Quaternion) * target->boneCount);
+
+    char (*sourceKeys)[RLM_BONE_KEY_SIZE] = (char (*)[RLM_BONE_KEY_SIZE])MemAlloc(RLM_BONE_KEY_SIZE * source->boneCount);
+    for (int s = 0; s < source->boneCount; s++)
+        rlmMakeBoneKey(source->bones[s].name, sourceKeys[s]);
+
+    for (int t = 0; t < target->boneCount; t++)
+    {
+        map.targetToSource[t] = rlmMatchSourceBone(source, sourceKeys, target->bones[t].name);
+        if (map.targetToSource[t] < 0)
+            TraceLog(LOG_DEBUG, "rlModels : Retarget target bone %s has no source bone", target->bones[t].name);
+    }
+    MemFree(sourceKeys);
+
+    rlmCountRetargetMapped(&map);
+    rlmUpdateRetargetMap(&map);
+
+    TraceLog(LOG_INFO, "rlModels : Retarget map matched %d of %d target bones by name", map.mappedCount, target->boneCount);
+
+    int targetHip = target->retargetInfo->hipBone;
+    if (targetHip >= 0 && map.targetToSource[targetHip] < 0)
+        TraceLog(LOG_WARNING, "rlModels : Retarget target hip bone %s has no source bone, root motion will be lost", target->bones[targetHip].name);
+
+    return map;
+}
+
+bool rlmSetRetargetBone(rlmRetargetMap* map, const char* targetBone, const char* sourceBone)
+{
+    if (!map || !map->targetToSource || !targetBone)
+        return false;
+
+    int t = rlmFindSkeletonBone(map->target, targetBone);
+    if (t < 0)
+    {
+        TraceLog(LOG_WARNING, "rlModels : Retarget target bone %s not found", targetBone);
+        return false;
+    }
+
+    int s = -1;
+    if (sourceBone)
+    {
+        s = rlmFindSkeletonBone(map->source, sourceBone);
+        if (s < 0)
+        {
+            TraceLog(LOG_WARNING, "rlModels : Retarget source bone %s not found", sourceBone);
+            return false;
+        }
+    }
+
+    map->targetToSource[t] = s;
+    rlmCountRetargetMapped(map);
+    rlmUpdateRetargetMap(map);
+    return true;
+}
+
+void rlmSetRetargetRootCorrection(rlmRetargetMap* map, rlmPQSTransorm correction)
+{
+    if (!map)
+        return;
+
+    map->rootCorrection = correction;
+    rlmUpdateRetargetMap(map);
+}
+
+void rlmUpdateRetargetMap(rlmRetargetMap* map)
+{
+    if (!map || !map->targetToSource || !map->source->retargetInfo || !map->target->retargetInfo)
+        return;
+
+    const rlmSkeletonRetargetInfo* sourceInfo = map->source->retargetInfo;
+    const rlmSkeletonRetargetInfo* targetInfo = map->target->retargetInfo;
+    const rlmPQSTransorm* correction = &map->rootCorrection;
+
+    // a target bone's model space rotation is correction * sourceFrame * offset, so when the source is in its
+    // reference pose the target lands exactly in its own reference pose
+    Quaternion invCorrection = QuaternionInvert(correction->rotation);
+    for (int t = 0; t < map->target->boneCount; t++)
+    {
+        int s = map->targetToSource[t];
+        if (s < 0)
+        {
+            map->rotationOffsets[t] = QuaternionIdentity();
+            continue;
+        }
+
+        Quaternion sourceRef = sourceInfo->referencePose.boneTransforms[s].rotation;
+        Quaternion targetRef = targetInfo->referencePose.boneTransforms[t].rotation;
+        map->rotationOffsets[t] = QuaternionNormalize(QuaternionMultiply(QuaternionMultiply(QuaternionInvert(sourceRef), invCorrection), targetRef));
+    }
+
+    map->translationScale = 1;
+    if (sourceInfo->hipBone >= 0 && targetInfo->hipBone >= 0)
+    {
+        Vector3 sourceHip = sourceInfo->referencePose.boneTransforms[sourceInfo->hipBone].position;
+        sourceHip = Vector3Add(Vector3RotateByQuaternion(Vector3Multiply(sourceHip, correction->scale), correction->rotation), correction->position);
+
+        float sourceHeight = Vector3Length(sourceHip);
+        if (sourceHeight > 0.000001f && targetInfo->hipHeight > 0.000001f)
+            map->translationScale = targetInfo->hipHeight / sourceHeight;
+        else
+            TraceLog(LOG_WARNING, "rlModels : Retarget hip height is zero on one skeleton, hip motion will not be scaled");
+    }
+}
+
+void rlmUnloadRetargetMap(rlmRetargetMap* map)
+{
+    if (!map)
+        return;
+
+    MemFree(map->targetToSource);
+    MemFree(map->rotationOffsets);
+    map->targetToSource = NULL;
+    map->rotationOffsets = NULL;
+    map->mappedCount = 0;
+    map->source = NULL;
+    map->target = NULL;
+}
+
+static Vector3 rlmTransformPoint(const rlmPQSTransorm* transform, Vector3 point)
+{
+    return Vector3Add(Vector3RotateByQuaternion(Vector3Multiply(point, transform->scale), transform->rotation), transform->position);
+}
+
+void rlmRetargetKeyframeInto(const rlmRetargetMap* map, const rlmAnimationKeyframe* source, rlmAnimationKeyframe* dest)
+{
+    if (!map || !map->targetToSource || !map->source || !map->target || !map->source->retargetInfo || !map->target->retargetInfo)
+        return;
+
+    if (!source || !dest || !source->boneTransforms || !dest->boneTransforms || source->boneTransforms == dest->boneTransforms)
+        return;
+
+    const rlmSkeleton* target = map->target;
+    const rlmSkeletonRetargetInfo* sourceInfo = map->source->retargetInfo;
+    const rlmSkeletonRetargetInfo* targetInfo = target->retargetInfo;
+    const rlmPQSTransorm* correction = &map->rootCorrection;
+
+    // parents first, so every bone can build on its parent's finished model space transform in dest
+    for (int i = 0; i < target->boneCount; i++)
+    {
+        int t = targetInfo->evalOrder[i];
+        int parent = target->bones[t].parentId;
+        rlmPQSTransorm local = targetInfo->localReferencePose.boneTransforms[t];
+
+        // start from the target's own reference pose hanging off the (already retargeted) parent,
+        // this keeps the target's bone lengths and is what unmapped bones end up with
+        rlmPQSTransorm result = local;
+        if (parent >= 0)
+        {
+            const rlmPQSTransorm* parentModel = &dest->boneTransforms[parent];
+            result.rotation = QuaternionMultiply(parentModel->rotation, local.rotation);
+            result.scale = Vector3Multiply(local.scale, parentModel->scale);
+            result.position = rlmTransformPoint(parentModel, local.position);
+        }
+
+        int s = map->targetToSource[t];
+        if (s >= 0)
+        {
+            const rlmPQSTransorm* sourceFrame = &source->boneTransforms[s];
+            result.rotation = QuaternionNormalize(QuaternionMultiply(QuaternionMultiply(correction->rotation, sourceFrame->rotation), map->rotationOffsets[t]));
+
+            if (t == targetInfo->hipBone)
+            {
+                // hip motion relative to the source reference pose, scaled to the target's size
+                Vector3 current = rlmTransformPoint(correction, sourceFrame->position);
+                Vector3 reference = rlmTransformPoint(correction, sourceInfo->referencePose.boneTransforms[s].position);
+                Vector3 motion = Vector3Scale(Vector3Subtract(current, reference), map->translationScale);
+
+                result.position = Vector3Add(targetInfo->referencePose.boneTransforms[t].position, motion);
+            }
+        }
+
+        dest->boneTransforms[t] = result;
+    }
+}
+
+rlmAnimationKeyframe rlmRetargetKeyframe(const rlmRetargetMap* map, rlmAnimationKeyframe source)
+{
+    rlmAnimationKeyframe frame = { 0 };
+    if (!map || !map->target || map->target->boneCount <= 0)
+        return frame;
+
+    frame.boneTransforms = (rlmPQSTransorm*)MemAlloc(sizeof(rlmPQSTransorm) * map->target->boneCount);
+    rlmRetargetKeyframeInto(map, &source, &frame);
+    return frame;
+}
+
+rlmModelAniamtionSequence rlmRetargetSequence(const rlmRetargetMap* map, const rlmModelAniamtionSequence* source)
+{
+    rlmModelAniamtionSequence sequence = { 0 };
+    if (!map || !map->target || !source)
+        return sequence;
+
+    memcpy(sequence.name, source->name, sizeof(sequence.name));
+    sequence.fps = source->fps;
+
+    if (source->keyframeCount <= 0 || !source->keyframes)
+        return sequence;
+
+    sequence.keyframeCount = source->keyframeCount;
+    sequence.keyframes = (rlmAnimationKeyframe*)MemAlloc(sizeof(rlmAnimationKeyframe) * sequence.keyframeCount);
+
+    for (int f = 0; f < sequence.keyframeCount; f++)
+        sequence.keyframes[f] = rlmRetargetKeyframe(map, source->keyframes[f]);
+
+    return sequence;
+}
+
+rlmModelAnimationSet rlmRetargetAnimationSet(const rlmRetargetMap* map, const rlmModelAnimationSet* source)
+{
+    rlmModelAnimationSet set = { 0 };
+    if (!map || !source || source->sequenceCount <= 0 || !source->sequences)
+        return set;
+
+    set.sequenceCount = source->sequenceCount;
+    set.sequences = (rlmModelAniamtionSequence*)MemAlloc(sizeof(rlmModelAniamtionSequence) * set.sequenceCount);
+
+    for (int i = 0; i < set.sequenceCount; i++)
+        set.sequences[i] = rlmRetargetSequence(map, &source->sequences[i]);
+
+    return set;
+}
+
+static void rlmModelToLocalRecursive(const rlmBoneInfo* bone, const rlmAnimationKeyframe* in, rlmAnimationKeyframe* out, const rlmPQSTransorm* parentModel)
+{
+    // children first, so that when in == out this bone's model space transform is still intact while the children use it
+    rlmPQSTransorm thisModel = in->boneTransforms[bone->boneId];
+
+    for (int i = 0; i < bone->childCount; i++)
+        rlmModelToLocalRecursive(bone->childBones[i], in, out, &thisModel);
+
+    if (!parentModel)
+    {
+        out->boneTransforms[bone->boneId] = thisModel;
+        return;
+    }
+
+    Quaternion invParentRotation = QuaternionInvert(parentModel->rotation);
+    Vector3 invParentScale = Vector3Divide((Vector3) { 1, 1, 1 }, parentModel->scale);
+
+    rlmPQSTransorm local;
+    local.rotation = QuaternionMultiply(invParentRotation, thisModel.rotation);
+    local.scale = Vector3Multiply(thisModel.scale, invParentScale);
+    local.position = Vector3Multiply(Vector3RotateByQuaternion(Vector3Subtract(thisModel.position, parentModel->position), invParentRotation), invParentScale);
+
+    out->boneTransforms[bone->boneId] = local;
+}
+
+static void rlmLocalToModelRecursive(const rlmBoneInfo* bone, const rlmAnimationKeyframe* in, rlmAnimationKeyframe* out, const rlmPQSTransorm* parentModel)
+{
+    // parents first, children read their parent's finished model space transform from out
+    rlmPQSTransorm local = in->boneTransforms[bone->boneId];
+    rlmPQSTransorm thisModel = local;
+
+    if (parentModel)
+    {
+        thisModel.rotation = QuaternionMultiply(parentModel->rotation, local.rotation);
+        thisModel.scale = Vector3Multiply(local.scale, parentModel->scale);
+        thisModel.position = Vector3Add(Vector3RotateByQuaternion(Vector3Multiply(local.position, parentModel->scale), parentModel->rotation), parentModel->position);
+    }
+
+    out->boneTransforms[bone->boneId] = thisModel;
+
+    for (int i = 0; i < bone->childCount; i++)
+        rlmLocalToModelRecursive(bone->childBones[i], in, out, &thisModel);
+}
+
+void rlmKeyframeModelToLocal(const rlmSkeleton* skeleton, const rlmAnimationKeyframe* in, rlmAnimationKeyframe* out)
+{
+    if (!skeleton || !in || !out || !in->boneTransforms || !out->boneTransforms)
+        return;
+
+    // walk every root, not just rootBone, so skeletons with multiple roots are fully converted
+    for (int i = 0; i < skeleton->boneCount; i++)
+    {
+        if (skeleton->bones[i].parentId < 0)
+            rlmModelToLocalRecursive(&skeleton->bones[i], in, out, NULL);
+    }
+}
+
+void rlmKeyframeLocalToModel(const rlmSkeleton* skeleton, const rlmAnimationKeyframe* in, rlmAnimationKeyframe* out)
+{
+    if (!skeleton || !in || !out || !in->boneTransforms || !out->boneTransforms)
+        return;
+
+    for (int i = 0; i < skeleton->boneCount; i++)
+    {
+        if (skeleton->bones[i].parentId < 0)
+            rlmLocalToModelRecursive(&skeleton->bones[i], in, out, NULL);
+    }
+}
+
 void rlmAdvanceAnimationInstance(rlmAnimatedModelInstance* instance, float deltaTime)
 {
-    if (!instance)
+    if (!instance || !instance->sequences || instance->currentSequence < 0 || instance->currentSequence >= instance->sequences->sequenceCount)
+        return;
+
+    if (instance->sequences->sequences[instance->currentSequence].keyframeCount <= 0)
         return;
 
     instance->currentParam += deltaTime;
@@ -1057,7 +1662,7 @@ void rlmAdvanceAnimationInstance(rlmAnimatedModelInstance* instance, float delta
 
 void rlmSetAnimationInstanceSequence(rlmAnimatedModelInstance* instance, int sequence)
 {
-    if (!instance)
+    if (!instance || !instance->sequences || sequence < 0 || sequence >= instance->sequences->sequenceCount)
         return;
     instance->currentFrame = 0;
     instance->currentSequence = sequence;

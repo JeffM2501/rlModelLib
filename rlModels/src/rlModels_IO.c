@@ -8,62 +8,81 @@ rlmModel rlmLoadFromModel(Model raylibModel)
 	return rlmLoadFromModelEX(raylibModel, false);
 }
 
+rlmSkeleton* rlmLoadSkeletonFromModel(Model raylibModel)
+{
+	if (raylibModel.skeleton.boneCount == 0 || raylibModel.skeleton.bones == NULL || raylibModel.skeleton.bindPose == NULL)
+		return NULL;
+
+	rlmSkeleton* skeleton = (rlmSkeleton*)MemAlloc(sizeof(rlmSkeleton)); // MemAlloc zero fills
+
+	skeleton->boneCount = (int)raylibModel.skeleton.boneCount;
+	skeleton->bones = (rlmBoneInfo*)MemAlloc(sizeof(rlmBoneInfo) * skeleton->boneCount);
+
+	skeleton->bindingFrame.boneTransforms = (rlmPQSTransorm*)MemAlloc(sizeof(rlmPQSTransorm) * skeleton->boneCount);
+
+	for (int i = 0; i < skeleton->boneCount; i++)
+	{
+		skeleton->bones[i].boneId = i;
+		strncpy(skeleton->bones[i].name, raylibModel.skeleton.bones[i].name, sizeof(skeleton->bones[i].name) - 1);
+		skeleton->bones[i].name[sizeof(skeleton->bones[i].name) - 1] = '\0';
+
+		skeleton->bones[i].parentId = raylibModel.skeleton.bones[i].parent;
+		if (skeleton->bones[i].parentId >= skeleton->boneCount)
+		{
+			TraceLog(LOG_WARNING, "rlModels : Bone %s has invalid parent %d, treating it as a root", skeleton->bones[i].name, skeleton->bones[i].parentId);
+			skeleton->bones[i].parentId = -1;
+		}
+		skeleton->bones[i].childBones = NULL;
+		skeleton->bones[i].childCount = 0;
+
+		skeleton->bindingFrame.boneTransforms[i].position = raylibModel.skeleton.bindPose[i].translation;
+		skeleton->bindingFrame.boneTransforms[i].scale = raylibModel.skeleton.bindPose[i].scale;
+		skeleton->bindingFrame.boneTransforms[i].rotation = raylibModel.skeleton.bindPose[i].rotation;
+	}
+
+	for (int i = 0; i < skeleton->boneCount; i++)
+	{
+		if (skeleton->bones[i].parentId < 0 && !skeleton->rootBone)
+		{
+			skeleton->rootBone = &skeleton->bones[i];
+		}
+		else if (skeleton->bones[i].parentId >= 0)
+		{
+			rlmBoneInfo* parentBone = &skeleton->bones[skeleton->bones[i].parentId];
+			parentBone->childCount++;
+			parentBone->childBones = (rlmBoneInfo**)MemRealloc(parentBone->childBones, sizeof(rlmBoneInfo*) * parentBone->childCount);
+			parentBone->childBones[parentBone->childCount - 1] = &skeleton->bones[i];
+		}
+		else
+		{
+			TraceLog(LOG_WARNING, "rlModels : More than one bone has no parent, multiple roots, %s", skeleton->bones[i].name);
+		}
+	}
+
+	return skeleton;
+}
+
+rlmSkeleton* rlmLoadSkeletonFromFile(const char* fileName)
+{
+	Model raylibModel = LoadModel(fileName);
+	rlmSkeleton* skeleton = rlmLoadSkeletonFromModel(raylibModel);
+	UnloadModel(raylibModel);
+
+	if (!skeleton)
+		TraceLog(LOG_WARNING, "rlModels : %s has no skeleton", fileName);
+
+	return skeleton;
+}
+
 rlmModel rlmLoadFromModelEX(Model raylibModel, bool keepCPUdata)
 {
 	rlmModel newModel = { 0 };
 
-	if (raylibModel.skeleton.boneCount > 0 && raylibModel.skeleton.bones != NULL)
-	{
-		newModel.ownsSkeleton = true;
+	newModel.skeleton = rlmLoadSkeletonFromModel(raylibModel);
+	newModel.ownsSkeleton = newModel.skeleton != NULL;
 
-		rlmSkeleton* skeleton = (rlmSkeleton*)MemAlloc(sizeof(rlmSkeleton));
-
-		skeleton->boneCount = raylibModel.skeleton.boneCount;
-		skeleton->bones = (rlmBoneInfo*)MemAlloc(sizeof(rlmBoneInfo) * skeleton->boneCount);
-
-		skeleton->bindingFrame.boneTransforms = (rlmPQSTransorm*)MemAlloc(sizeof(rlmPQSTransorm) * skeleton->boneCount);
-
-		for (int i = 0; i < skeleton->boneCount; i++)
-		{
-			skeleton->bones[i].boneId = i;
-			skeleton->bones[i].name[0] = '\0';
-			strcpy(skeleton->bones[i].name, raylibModel.skeleton.bones[i].name);
-
-			skeleton->bones[i].parentId = raylibModel.skeleton.bones[i].parent;
-			skeleton->bones[i].childBones = NULL;
-			skeleton->bones[i].childCount = 0;
-
-			skeleton->bindingFrame.boneTransforms[i].position = raylibModel.skeleton.bindPose[i].translation;
-			skeleton->bindingFrame.boneTransforms[i].scale = raylibModel.skeleton.bindPose[i].scale;
-			skeleton->bindingFrame.boneTransforms[i].rotation = raylibModel.skeleton.bindPose[i].rotation;
-		}
-
-		for (int i = 0; i < skeleton->boneCount; i++)
-		{
-			if (skeleton->bones[i].parentId < 0 && !skeleton->rootBone)
-			{
-				skeleton->rootBone = &skeleton->bones[i];
-			}
-			else if (skeleton->bones[i].parentId >= 0)
-			{
-				rlmBoneInfo* parentBone = &skeleton->bones[skeleton->bones[i].parentId];
-				parentBone->childCount++;
-				parentBone->childBones = (rlmBoneInfo**)MemRealloc(parentBone->childBones, sizeof(rlmBoneInfo*) * parentBone->childCount);
-				parentBone->childBones[parentBone->childCount - 1] = &skeleton->bones[i];
-			}
-			else
-			{
-				TraceLog(LOG_WARNING, "rlModels : More than one bone has no parent, multiple roots, %s", skeleton->bones[i].name);
-			}
-		}
-
-		// TODO, make children relative
-
-		newModel.skeleton = skeleton;
-
-		MemFree(raylibModel.skeleton.bindPose);
-		MemFree(raylibModel.skeleton.bones);
-	}
+	MemFree(raylibModel.skeleton.bindPose);
+	MemFree(raylibModel.skeleton.bones);
 
 	newModel.orientationTransform = rlmPQSIdentity();
 
@@ -216,12 +235,38 @@ rlmModel rlmLoadFromModelEX(Model raylibModel, bool keepCPUdata)
 
 rlmModelAniamtionSequence* rlmLoadModelAnimations(rlmSkeleton* skeleton, ModelAnimation* animations, int animationCount)
 {
+	return rlmLoadModelAnimationsEx(skeleton, animations, animationCount, RLM_DEFAULT_ANIMATION_FPS);
+}
+
+rlmModelAniamtionSequence* rlmLoadModelAnimationsEx(rlmSkeleton* skeleton, ModelAnimation* animations, int animationCount, float fps)
+{
+	if (fps <= 0)
+	{
+		TraceLog(LOG_WARNING, "rlModels : Invalid animation fps %f, using %f", fps, RLM_DEFAULT_ANIMATION_FPS);
+		fps = RLM_DEFAULT_ANIMATION_FPS;
+	}
+
 	rlmModelAniamtionSequence* sequences = (rlmModelAniamtionSequence*)MemAlloc(sizeof(rlmModelAniamtionSequence) * animationCount);
 
 	for (int i = 0; i < animationCount; i++)
 	{
 		memcpy(sequences[i].name, animations[i].name, 32);
-		sequences[i].fps = 30;
+		sequences[i].fps = fps;
+
+		if (!skeleton || animations[i].boneCount != (unsigned int)skeleton->boneCount)
+		{
+			TraceLog(LOG_WARNING, "rlModels : Animation %s has %u bones but the skeleton has %d, loading it as an empty sequence",
+				animations[i].name, animations[i].boneCount, skeleton ? skeleton->boneCount : 0);
+
+			sequences[i].keyframeCount = 0;
+			sequences[i].keyframes = NULL;
+
+			for (int f = 0; f < animations[i].keyframeCount; f++)
+				MemFree(animations[i].keyframePoses[f]);
+			MemFree(animations[i].keyframePoses);
+			continue;
+		}
+
 		sequences[i].keyframeCount = animations[i].keyframeCount;
 		sequences[i].keyframes = (rlmAnimationKeyframe*)MemAlloc(sizeof(rlmAnimationKeyframe) * animations[i].keyframeCount);
 
